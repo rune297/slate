@@ -198,86 +198,65 @@
           </section>
 
           <section id="tab-todo" class="tab-panel" role="tabpanel" aria-labelledby="tab-button-todo" aria-hidden="true" inert>
-            <div class="sections">
-              <section class="quadrant tile" data-priority="P0">
-                <div class="quadrant-header">
-                  <span class="dot dot-p0"></span>
-                  <input class="todo-category-name" data-category="P0" value="课程" maxlength="24" aria-label="修改待办分类名称" />
-                  <button class="bulk-delete todo-bulk-delete" type="button" data-bulk-priority="P0" hidden>删除</button>
-                  <span class="count" data-priority="P0">0</span>
+            <div class="todo-shell">
+              <aside class="todo-rail tile">
+                <div class="todo-rail-views">
+                  <button class="todo-view is-active" data-view="today" type="button"><span>今天</span><em data-view-count="today">0</em></button>
+                  <button class="todo-view" data-view="upcoming" type="button"><span>已排期</span><em data-view-count="upcoming">0</em></button>
+                  <button class="todo-view" data-view="inbox" type="button"><span>收件箱</span><em data-view-count="inbox">0</em></button>
+                  <button class="todo-view" data-view="done" type="button"><span>已完成</span><em data-view-count="done">0</em></button>
                 </div>
-                <ul class="todo-list" data-priority="P0"></ul>
-                <div class="add-row">
+                <div class="todo-rail-tags">
+                  <div class="todo-rail-heading">分类</div>
+                  <button class="todo-tag is-active" data-tag="all" type="button"><span>全部</span></button>
+                  <div class="todo-tag-row" data-tag-row="P0">
+                    <button class="todo-tag" data-tag="P0" type="button"><i class="dot dot-p0" aria-hidden="true"></i><input class="todo-category-name" data-category="P0" value="课程" maxlength="24" aria-label="修改分类名称" /></button>
+                    <span class="count" data-priority="P0">0</span>
+                  </div>
+                  <div class="todo-tag-row" data-tag-row="P1">
+                    <button class="todo-tag" data-tag="P1" type="button"><i class="dot dot-p1" aria-hidden="true"></i><input class="todo-category-name" data-category="P1" value="自媒体&amp;写作" maxlength="24" aria-label="修改分类名称" /></button>
+                    <span class="count" data-priority="P1">0</span>
+                  </div>
+                  <div class="todo-tag-row" data-tag-row="P2">
+                    <button class="todo-tag" data-tag="P2" type="button"><i class="dot dot-p2" aria-hidden="true"></i><input class="todo-category-name" data-category="P2" value="Vibe coding" maxlength="24" aria-label="修改分类名称" /></button>
+                    <span class="count" data-priority="P2">0</span>
+                  </div>
+                  <div class="todo-tag-row" data-tag-row="P3">
+                    <button class="todo-tag" data-tag="P3" type="button"><i class="dot dot-p3" aria-hidden="true"></i><input class="todo-category-name" data-category="P3" value="日常" maxlength="24" aria-label="修改分类名称" /></button>
+                    <span class="count" data-priority="P3">0</span>
+                  </div>
+                </div>
+              </aside>
+              <div class="todo-main tile">
+                <div class="todo-quick-row">
                   <input
+                    id="todo-quick-input"
                     type="text"
-                    placeholder="添加待办，回车保存…"
-                    aria-label="添加课程待办"
-                    data-priority="P0"
+                    placeholder="记一件事… 回车保存，支持「明天」「周五 20:00」"
+                    aria-label="快速添加待办"
                     maxlength="80"
+                    autocomplete="off"
+                    spellcheck="false"
                   />
-                  <button class="todo-deadline-trigger" type="button" data-deadline-priority="P0" aria-label="选择课程待办截止时间"><span>日期</span></button>
+                  <select id="todo-quick-cat" aria-label="待办分类">
+                    <option value="P0">课程</option>
+                    <option value="P1">自媒体&amp;写作</option>
+                    <option value="P2">Vibe coding</option>
+                    <option value="P3" selected>日常</option>
+                  </select>
+                  <button class="todo-deadline-trigger" id="todo-quick-deadline" type="button" aria-label="选择截止时间"><span>日期</span></button>
                 </div>
-              </section>
-
-              <section class="quadrant tile" data-priority="P1">
-                <div class="quadrant-header">
-                  <span class="dot dot-p1"></span>
-                  <input class="todo-category-name" data-category="P1" value="自媒体&amp;写作" maxlength="24" aria-label="修改待办分类名称" />
-                  <button class="bulk-delete todo-bulk-delete" type="button" data-bulk-priority="P1" hidden>删除</button>
-                  <span class="count" data-priority="P1">0</span>
+                <div class="todo-view-head">
+                  <strong id="todo-view-title">今天</strong>
+                  <span id="todo-view-sub"></span>
+                  <button class="bulk-delete todo-bulk-delete" id="todo-bulk-delete" type="button" hidden>删除</button>
                 </div>
-                <ul class="todo-list" data-priority="P1"></ul>
-                <div class="add-row">
-                  <input
-                    type="text"
-                    placeholder="添加待办，回车保存…"
-                    aria-label="添加自媒体和写作待办"
-                    data-priority="P1"
-                    maxlength="80"
-                  />
-                  <button class="todo-deadline-trigger" type="button" data-deadline-priority="P1" aria-label="选择自媒体待办截止时间"><span>日期</span></button>
+                <ul class="todo-list" id="todo-list"></ul>
+                <div class="todo-empty" id="todo-empty" hidden>
+                  <strong id="todo-empty-title">今天没有待办</strong>
+                  <span id="todo-empty-hint">用上方输入框随手记一件，支持「明天交稿」这类写法</span>
                 </div>
-              </section>
-
-              <section class="quadrant tile" data-priority="P2">
-                <div class="quadrant-header">
-                  <span class="dot dot-p2"></span>
-                  <input class="todo-category-name" data-category="P2" value="Vibe coding" maxlength="24" aria-label="修改待办分类名称" />
-                  <button class="bulk-delete todo-bulk-delete" type="button" data-bulk-priority="P2" hidden>删除</button>
-                  <span class="count" data-priority="P2">0</span>
-                </div>
-                <ul class="todo-list" data-priority="P2"></ul>
-                <div class="add-row">
-                  <input
-                    type="text"
-                    placeholder="添加待办，回车保存…"
-                    aria-label="添加 Vibe coding 待办"
-                    data-priority="P2"
-                    maxlength="80"
-                  />
-                  <button class="todo-deadline-trigger" type="button" data-deadline-priority="P2" aria-label="选择 Vibe coding 待办截止时间"><span>日期</span></button>
-                </div>
-              </section>
-
-              <section class="quadrant tile" data-priority="P3">
-                <div class="quadrant-header">
-                  <span class="dot dot-p3"></span>
-                  <input class="todo-category-name" data-category="P3" value="日常" maxlength="24" aria-label="修改待办分类名称" />
-                  <button class="bulk-delete todo-bulk-delete" type="button" data-bulk-priority="P3" hidden>删除</button>
-                  <span class="count" data-priority="P3">0</span>
-                </div>
-                <ul class="todo-list" data-priority="P3"></ul>
-                <div class="add-row">
-                  <input
-                    type="text"
-                    placeholder="添加待办，回车保存…"
-                    aria-label="添加日常待办"
-                    data-priority="P3"
-                    maxlength="80"
-                  />
-                  <button class="todo-deadline-trigger" type="button" data-deadline-priority="P3" aria-label="选择日常待办截止时间"><span>日期</span></button>
-                </div>
-              </section>
+              </div>
             </div>
           </section>
 

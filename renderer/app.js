@@ -181,6 +181,7 @@ function normalizeTodoItems(value) {
           ? new Date(Date.parse(String(item.deadline))).toISOString()
           : '',
         remindedAt: Math.max(0, Number(item.remindedAt) || 0),
+        pinnedToday: item.pinnedToday === true,
       };
     })
     .filter(Boolean);
@@ -200,9 +201,11 @@ function saveData(data) {
 
 let data = loadData();
 let todoCategoryNames = loadTodoCategoryNames();
-const todoSelections = Object.fromEntries(PRIORITIES.map((priority) => [priority, new Set()]));
-const todoSelectionAnchors = Object.fromEntries(PRIORITIES.map((priority) => [priority, null]));
+const todoSelection = new Set();
+let todoSelectionAnchor = null;
 let editingTodo = null;
+let todoView = 'today';
+let todoTag = 'all';
 
 function loadTodoCategoryNames() {
   try {
@@ -227,10 +230,9 @@ function applyTodoCategoryNames() {
   PRIORITIES.forEach((categoryId) => {
     const name = todoCategoryNames[categoryId];
     const input = document.querySelector(`.todo-category-name[data-category="${categoryId}"]`);
-    const addInput = document.querySelector(`.add-row input[data-priority="${categoryId}"]`);
     if (input) input.value = name;
-    if (addInput) addInput.setAttribute('aria-label', `添加${name}待办`);
   });
+  if (typeof applyQuickCategoryNames === 'function') applyQuickCategoryNames();
 }
 if (window.slateAPI && typeof window.slateAPI.scheduleTodoReminders === 'function') {
   window.slateAPI
@@ -271,9 +273,9 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-function todoItemHtml(priority, item) {
+function todoItemHtml(bucket, item) {
   const doneClass = item.done ? ' done' : '';
-  const selectedClass = todoSelections[priority]?.has(item.id) ? ' multi-selected' : '';
+  const selectedClass = todoSelection.has(item.id) ? ' multi-selected' : '';
   const safeId = escapeHtml(item.id);
   const safeText = escapeHtml(item.text);
   const deadline = Number.isFinite(Date.parse(String(item.deadline || '')))
@@ -291,30 +293,40 @@ function todoItemHtml(priority, item) {
   const batteryHtml = battery
     ? `<span class="todo-battery" data-tone="${battery.tone}"${battery.overdue ? ' data-overdue="true" role="img"' : ''} title="${battery.label}" aria-label="${battery.label}"><i style="--battery:${battery.overdue ? 100 : battery.percent}%"></i><b>${battery.overdue ? '!' : `${battery.percent}%`}</b></span>`
     : '';
-  const isEditing = editingTodo?.priority === priority && editingTodo?.id === item.id;
+  const categoryName = todoCategoryNames[bucket] || bucket;
+  const categoryChip = todoView === 'done'
+    ? ''
+    : `<button class="todo-cat-chip" type="button" data-action="cycle-cat" data-bucket="${bucket}" title="点击切换分类">${escapeHtml(categoryName)}</button>`;
+  const pinLabel = item.pinnedToday ? '移出今天' : '加入今天';
+  const pinButton = item.done
+    ? ''
+    : `<button class="todo-pin${item.pinnedToday ? ' pinned' : ''}" type="button" data-action="pin" aria-label="${pinLabel}：${safeText}" aria-pressed="${item.pinnedToday === true}"><span>今天</span></button>`;
+  const isEditing = editingTodo?.id === item.id;
   const contentHtml = isEditing
     ? `<div class="todo-inline-editor"><input class="todo-inline-name" value="${safeText}" maxlength="80" aria-label="修改待办名称" />${batteryHtml}<button class="todo-inline-deadline" type="button" data-action="edit-deadline">${deadline || '日期'}</button><button class="todo-inline-save" type="button" data-action="save-edit" aria-label="保存修改">✓</button></div>`
     : `<button class="todo-copy" type="button" data-action="edit" title="${safeText}" aria-label="修改：${safeText}"><span class="todo-text">${safeText}</span>${batteryHtml}${deadline ? `<time class="todo-ddl" datetime="${escapeHtml(item.deadline)}">${escapeHtml(deadline)}</time>` : ''}</button>`;
   return `
-    <li class="todo-item${doneClass}${selectedClass}" data-id="${safeId}" data-priority="${priority}">
+    <li class="todo-item${doneClass}${selectedClass}" data-id="${safeId}" data-priority="${bucket}">
       <button class="checkbox" type="button" data-action="toggle" aria-label="${toggleLabel}" aria-pressed="${item.done}">${checkSvg()}</button>
       ${contentHtml}
+      ${categoryChip}
+      ${pinButton}
       <button class="delete" type="button" data-action="delete" aria-label="删除：${safeText}">×</button>
     </li>
   `;
 }
 
-function captureTodoPositions(priority) {
-  const list = document.querySelector(`.todo-list[data-priority="${priority}"]`);
+function captureTodoPositions() {
+  const list = document.getElementById('todo-list');
   if (!list) return new Map();
   return new Map(Array.from(list.querySelectorAll('.todo-item[data-id]')).map((item) => (
     [item.dataset.id, item.getBoundingClientRect()]
   )));
 }
 
-function animateTodoOrder(priority, previousPositions) {
+function animateTodoOrder(previousPositions) {
   if (!previousPositions?.size || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const list = document.querySelector(`.todo-list[data-priority="${priority}"]`);
+  const list = document.getElementById('todo-list');
   if (!list) return;
   requestAnimationFrame(() => {
     list.querySelectorAll('.todo-item[data-id]').forEach((item) => {
@@ -334,13 +346,79 @@ function animateTodoOrder(priority, previousPositions) {
   });
 }
 
+const TODO_VIEW_TITLES = { today: '今天', upcoming: '已排期', inbox: '收件箱', done: '已完成' };
+
+function allTodos() {
+  return PRIORITIES.flatMap((bucket) => (data[bucket] || []).map((item) => ({ ...item, bucket })));
+}
+
+function findTodo(id) {
+  for (const bucket of PRIORITIES) {
+    const index = (data[bucket] || []).findIndex((item) => item.id === id);
+    if (index >= 0) return { bucket, index, item: data[bucket][index] };
+  }
+  return null;
+}
+
+function visibleTodos() {
+  const now = new Date();
+  return window.SlateDomain.sortTodosForDisplay(allTodos().filter((item) => (
+    (todoTag === 'all' || item.bucket === todoTag)
+    && window.SlateDomain.todoBelongsToView(item, todoView, now)
+  )));
+}
+
+function updateViewCounts() {
+  const now = new Date();
+  const items = allTodos();
+  ['today', 'upcoming', 'inbox', 'done'].forEach((view) => {
+    const el = document.querySelector(`[data-view-count="${view}"]`);
+    if (!el) return;
+    const count = items.filter((item) => window.SlateDomain.todoBelongsToView(item, view, now)).length;
+    el.textContent = String(view === 'done' ? count : count);
+  });
+  PRIORITIES.forEach((bucket) => {
+    const el = document.querySelector(`.count[data-priority="${bucket}"]`);
+    if (!el) return;
+    el.textContent = String((data[bucket] || []).filter((item) => !item.done).length);
+  });
+}
+
 function renderList(priority, options = {}) {
-  const list = document.querySelector(`.todo-list[data-priority="${priority}"]`);
+  const list = document.getElementById('todo-list');
   if (!list) return;
-  const items = window.SlateDomain.sortTodosForDisplay(data[priority] || []);
-  list.innerHTML = items.map((item) => todoItemHtml(priority, item)).join('');
-  updateTodoBulkButton(priority);
-  animateTodoOrder(priority, options.previousPositions);
+  const items = visibleTodos();
+  list.innerHTML = items.map((item) => todoItemHtml(item.bucket, item)).join('');
+  updateViewCounts();
+  updateTodoBulkButton();
+  animateTodoOrder(options.previousPositions);
+  const empty = document.getElementById('todo-empty');
+  if (empty) {
+    empty.hidden = items.length > 0;
+    const titles = {
+      today: '今天没有待办',
+      upcoming: '还没有已排期的事',
+      inbox: '收件箱是空的',
+      done: '还没有完成的记录',
+    };
+    const hints = {
+      today: '用上方输入框随手记一件，支持「明天交稿」这类写法',
+      upcoming: '添加待办时写上「下周三」这类日期就会出现在这里',
+      inbox: '用上方输入框随手记一件，稍后再安排时间',
+      done: '完成的待办会在这里留档',
+    };
+    const title = document.getElementById('todo-empty-title');
+    const hint = document.getElementById('todo-empty-hint');
+    if (title) title.textContent = titles[todoView] || '';
+    if (hint) hint.textContent = hints[todoView] || '';
+  }
+  const viewTitle = document.getElementById('todo-view-title');
+  if (viewTitle) viewTitle.textContent = TODO_VIEW_TITLES[todoView] || todoView;
+  const viewSub = document.getElementById('todo-view-sub');
+  if (viewSub) {
+    const tagName = todoTag === 'all' ? '全部分类' : (todoCategoryNames[todoTag] || todoTag);
+    viewSub.textContent = `${tagName} · ${items.filter((item) => !item.done).length} 件未完成`;
+  }
   if (options.focusId) {
     requestAnimationFrame(() => list.querySelector(
       `.todo-item[data-id="${CSS.escape(options.focusId)}"] [data-action="${options.focusAction || 'toggle'}"]`
@@ -348,63 +426,50 @@ function renderList(priority, options = {}) {
   }
 }
 
-function updateTodoBulkButton(priority) {
-  const button = document.querySelector(`[data-bulk-priority="${priority}"]`);
-  const count = todoSelections[priority]?.size || 0;
+function updateTodoBulkButton() {
+  const button = document.getElementById('todo-bulk-delete');
+  const count = todoSelection.size;
   if (!button) return;
   button.hidden = count === 0;
   button.textContent = '删除';
   button.setAttribute('aria-label', count ? `删除 ${count} 项` : '删除所选');
 }
 
-function updateCount(priority) {
-  const countEl = document.querySelector(`.count[data-priority="${priority}"]`);
-  if (!countEl) return;
-  const items = data[priority] || [];
-  const pending = items.filter((t) => !t.done).length;
-  countEl.textContent = String(pending);
+function updateCount() {
+  updateViewCounts();
 }
 
 function renderAll() {
-  PRIORITIES.forEach((p) => {
-    renderList(p);
-    updateCount(p);
-  });
+  renderList();
 }
 
-setInterval(() => PRIORITIES.forEach(renderList), 60_000);
+setInterval(() => renderList(), 60_000);
 
 // 渲染重建 innerHTML 后，给指定条目挂一次性动画类；动画结束即卸载，不污染后续渲染
 function flashItemClass(priority, id, cls) {
-  const el = document.querySelector(
-    `.todo-item[data-priority="${priority}"][data-id="${id}"]`
-  );
+  const el = document.querySelector(`.todo-item[data-id="${CSS.escape(id)}"]`);
   if (!el) return;
   el.classList.add(cls);
   el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
 }
 
 function flashCheckboxPop(priority, id) {
-  const box = document.querySelector(
-    `.todo-item[data-priority="${priority}"][data-id="${id}"] .checkbox`
-  );
+  const box = document.querySelector(`.todo-item[data-id="${CSS.escape(id)}"] .checkbox`);
   if (!box) return;
   box.classList.add('pop');
   box.addEventListener('animationend', () => box.classList.remove('pop'), { once: true });
 }
 
-function addTodo(priority, text, deadline) {
+function addTodo(bucket, text, deadline, pinnedToday = false) {
   const item = window.SlateDomain.createTodo(text, deadline, generateId(), Date.now());
   if (!item) return false;
-  const previousPositions = captureTodoPositions(priority);
-  data[priority].push(item);
+  if (pinnedToday) item.pinnedToday = true;
+  const previousPositions = captureTodoPositions();
+  data[bucket].push(item);
   saveData(data);
-  renderList(priority, { previousPositions });
-  updateCount(priority);
-  flashItemClass(priority, item.id, 'enter');
-  const added = document.querySelector(
-    `.todo-item[data-priority="${priority}"][data-id="${item.id}"]`
-  );
+  renderList({ previousPositions });
+  flashItemClass(bucket, item.id, 'enter');
+  const added = document.querySelector(`.todo-item[data-id="${CSS.escape(item.id)}"]`);
   if (added) {
     requestAnimationFrame(() => {
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -414,53 +479,50 @@ function addTodo(priority, text, deadline) {
   return true;
 }
 
-function editTodo(priority, id, text, deadline) {
-  const index = (data[priority] || []).findIndex((item) => item.id === id);
-  if (index < 0) return false;
-  const updated = window.SlateDomain.updateTodo(data[priority][index], text, deadline);
+function editTodo(id, text, deadline) {
+  const found = findTodo(id);
+  if (!found) return false;
+  const updated = window.SlateDomain.updateTodo(found.item, text, deadline);
   if (!updated) return false;
-  const previousPositions = captureTodoPositions(priority);
-  data[priority][index] = updated;
+  const previousPositions = captureTodoPositions();
+  data[found.bucket][found.index] = updated;
   saveData(data);
-  renderList(priority, { previousPositions, focusId: id, focusAction: 'edit' });
+  renderList({ previousPositions, focusId: id, focusAction: 'edit' });
   return true;
 }
 
-function toggleTodo(priority, id) {
-  const list = data[priority];
-  const idx = list.findIndex((t) => t.id === id);
-  if (idx === -1) return;
-  const previousPositions = captureTodoPositions(priority);
+function toggleTodo(id) {
+  const found = findTodo(id);
+  if (!found) return;
+  const previousPositions = captureTodoPositions();
   const restoreFocus = document.activeElement?.closest('.todo-item')?.dataset.id === id;
-  list[idx].done = !list[idx].done;
-  const nowDone = list[idx].done;
+  found.item.done = !found.item.done;
+  const nowDone = found.item.done;
   saveData(data);
-  renderList(priority, {
+  renderList({
     previousPositions,
     focusId: restoreFocus ? id : '',
     focusAction: 'toggle',
   });
-  updateCount(priority);
-  if (nowDone) requestAnimationFrame(() => flashCheckboxPop(priority, id)); // 勾选弹一下
+  if (nowDone) requestAnimationFrame(() => flashCheckboxPop(found.bucket, id)); // 勾选弹一下
 }
 
-function deleteTodo(priority, id) {
-  const list = data[priority];
-  const index = list.findIndex((t) => t.id === id);
-  if (index === -1) return;
+function deleteTodo(id) {
+  const found = findTodo(id);
+  if (!found) return;
+  const list = data[found.bucket];
+  const index = found.index;
   const [removed] = list.splice(index, 1);
-  const itemEl = document.querySelector(
-    `.todo-item[data-priority="${priority}"][data-id="${CSS.escape(id)}"]`
-  );
+  const itemEl = document.querySelector(`.todo-item[data-id="${CSS.escape(id)}"]`);
   const shouldRestoreFocus = !!(itemEl && itemEl.contains(document.activeElement));
   const nearbyItem = itemEl && (itemEl.nextElementSibling || itemEl.previousElementSibling);
   if (itemEl) itemEl.remove();
   saveData(data);
-  updateCount(priority);
+  updateCount();
   if (shouldRestoreFocus) {
     const nextFocus =
       (nearbyItem && nearbyItem.querySelector('[data-action="toggle"]')) ||
-      document.querySelector(`.add-row input[data-priority="${priority}"]`);
+      document.getElementById('todo-quick-input');
     if (nextFocus) nextFocus.focus({ preventScroll: true });
   }
   const summary = removed.text.length > 18 ? `${removed.text.slice(0, 18)}…` : removed.text;
@@ -471,10 +533,10 @@ function deleteTodo(priority, id) {
       if (list.some((item) => item.id === removed.id)) return;
       list.splice(Math.min(index, list.length), 0, removed);
       saveData(data);
-      renderList(priority);
-      updateCount(priority);
+      renderList();
+      updateCount();
       const restored = document.querySelector(
-        `.todo-item[data-priority="${priority}"][data-id="${CSS.escape(id)}"] [data-action="toggle"]`
+        `.todo-item[data-id="${CSS.escape(id)}"] [data-action="toggle"]`
       );
       if (restored) restored.focus({ preventScroll: true });
       showStatusToast('已撤销删除');
@@ -677,11 +739,9 @@ if (window.slateAPI && typeof window.slateAPI.onEscape === 'function') {
       return;
     }
     if (document.querySelector('.multi-selected')) {
-      PRIORITIES.forEach((priority) => {
-        todoSelections[priority].clear();
-        todoSelectionAnchors[priority] = null;
-        renderList(priority);
-      });
+      todoSelection.clear();
+      todoSelectionAnchor = null;
+      renderList();
       document.dispatchEvent(new CustomEvent('slate:clear-selection'));
       return;
     }
@@ -1044,8 +1104,7 @@ function renderTodoCalendar() {
 function closeTodoEditor() {
   if (todoEditorBackdrop) todoEditorBackdrop.hidden = true;
   if (todoEditorContext?.mode === 'edit') {
-    const { priority } = todoEditorContext;
-    renderList(priority);
+    renderList();
   }
   todoEditorContext = null;
 }
@@ -1070,12 +1129,12 @@ function applyTodoEditorSelection(markManual = true) {
   if (todoEditorError) todoEditorError.textContent = '';
   const { priority, id, mode } = todoEditorContext;
   if (mode === 'edit') {
-    const todo = (data[priority] || []).find((item) => item.id === id);
-    if (!todo) return false;
-    todo.deadline = deadline;
+    const found = findTodo(id);
+    if (!found) return false;
+    found.item.deadline = deadline;
     saveData(data);
   } else {
-    const trigger = document.querySelector(`.todo-deadline-trigger[data-deadline-priority="${priority}"]`);
+    const trigger = document.getElementById('todo-quick-deadline');
     if (!trigger) return false;
     trigger.dataset.deadline = deadline;
     trigger.dataset.deadlineSource = markManual ? 'manual' : (trigger.dataset.deadlineSource || 'default');
@@ -1090,8 +1149,7 @@ function applyTodoEditorSelection(markManual = true) {
 
 function openTodoEditor(priority, item = null, anchor = null) {
   const now = new Date();
-  const addInput = document.querySelector(`.add-row input[data-priority="${priority}"]`);
-  const trigger = document.querySelector(`.todo-deadline-trigger[data-deadline-priority="${priority}"]`);
+  const trigger = document.getElementById('todo-quick-deadline');
   const candidate = item && item.deadline ? new Date(item.deadline) : trigger?.dataset.deadline ? new Date(trigger.dataset.deadline) : null;
   const selectedDate = candidate && Number.isFinite(candidate.getTime())
     ? candidate
@@ -1109,8 +1167,8 @@ function openTodoEditor(priority, item = null, anchor = null) {
     const target = anchor || (item
       ? document.querySelector(`.todo-item[data-id="${CSS.escape(item.id)}"] .todo-inline-deadline`)
       : trigger);
-    const quadrant = target?.closest('.quadrant') || document.querySelector(`.quadrant[data-priority="${priority}"]`);
-    quadrant?.appendChild(todoEditorBackdrop);
+    const host = target?.closest('.todo-main') || document.querySelector('.todo-main');
+    host?.appendChild(todoEditorBackdrop);
     todoEditorBackdrop.hidden = false;
     todoEditorBackdrop.style.removeProperty('left');
     todoEditorBackdrop.style.removeProperty('top');
@@ -1171,119 +1229,170 @@ function resetTodoDraftDeadline(trigger, now = new Date()) {
 }
 
 function refreshDefaultTodoDeadlines(now = new Date()) {
-  document.querySelectorAll('.todo-deadline-trigger[data-deadline-priority]').forEach((trigger) => {
-    if (trigger.dataset.deadlineSource === 'manual') return;
-    applyDefaultTodoDeadline(trigger, now);
-  });
+  // 视角化待办：快速添加行默认不带日期（进收件箱），不再预填今天 23:30。
+  void now;
 }
 
-PRIORITIES.forEach((priority) => {
-  const input = document.querySelector(`.add-row input[data-priority="${priority}"]`);
-  const deadlineInput = document.querySelector(`.todo-deadline-trigger[data-deadline-priority="${priority}"]`);
-  if (!input) return;
-  applyDefaultTodoDeadline(deadlineInput);
+// ============ 待办 · 视角化重设计（今天/已排期/收件箱/已完成）============
+const quickInput = document.getElementById('todo-quick-input');
+const quickDeadline = document.getElementById('todo-quick-deadline');
+const quickCat = document.getElementById('todo-quick-cat');
 
-  const submitTodo = () => {
-    const value = input.value;
+function applyQuickCategoryNames() {
+  const select = document.getElementById('todo-quick-cat');
+  if (!select) return;
+  const previous = select.value || 'P3';
+  select.replaceChildren();
+  PRIORITIES.forEach((bucket) => {
+    select.add(new Option(todoCategoryNames[bucket] || bucket, bucket));
+  });
+  if (PRIORITIES.includes(previous)) select.value = previous;
+}
+
+if (quickInput) {
+  const submitQuickTodo = () => {
+    const value = quickInput.value;
     if (!value.trim()) return;
-    if (!deadlineInput || !deadlineInput.dataset.deadline) {
-      deadlineInput?.classList.add('invalid');
-      openTodoEditor(priority);
+    let text = value;
+    let deadline = '';
+    if (quickDeadline?.dataset.deadline) {
+      deadline = quickDeadline.dataset.deadline; // 用户用日期选择器明确指定
+    } else {
+      const parsed = window.SlateDomain.parseQuickTodoDate(value, new Date());
+      text = parsed.text;
+      deadline = parsed.deadline;
+    }
+    if (!text.trim()) {
+      quickInput.classList.add('invalid');
+      showStatusToast('内容不能只剩日期词');
       return;
     }
-    if (!addTodo(priority, value, deadlineInput.dataset.deadline)) {
-      deadlineInput.classList.add('invalid');
-      showStatusToast('截止时间格式不正确');
+    const bucket = quickCat?.value || 'P3';
+    if (!addTodo(bucket, text.trim(), deadline)) {
+      showStatusToast('待办保存失败，请重试');
       return;
     }
-    input.value = '';
-    if (todoEditorContext?.mode === 'add' && todoEditorContext.priority === priority) closeTodoEditor();
-    resetTodoDraftDeadline(deadlineInput);
-    deadlineInput.classList.remove('invalid');
-    input.focus({ preventScroll: true });
+    quickInput.value = '';
+    if (todoEditorContext?.mode === 'add') closeTodoEditor();
+    resetTodoDraftDeadline(quickDeadline);
+    quickDeadline?.classList.remove('invalid');
+    quickInput.focus({ preventScroll: true });
   };
 
-  input.addEventListener('keydown', (e) => {
+  quickInput.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     e.preventDefault();
     if (e.repeat) return;
-    submitTodo();
+    submitQuickTodo();
   });
-  deadlineInput?.addEventListener('click', () => openTodoEditor(priority));
+  quickDeadline?.addEventListener('click', () => openTodoEditor(quickCat?.value || 'P3'));
+}
+
+document.querySelectorAll('.todo-view[data-view]').forEach((button) => {
+  button.addEventListener('click', () => {
+    todoView = button.dataset.view;
+    document.querySelectorAll('.todo-view').forEach((el) => el.classList.toggle('is-active', el === button));
+    todoSelection.clear();
+    todoSelectionAnchor = null;
+    renderList();
+  });
+});
+document.querySelectorAll('.todo-tag[data-tag]').forEach((button) => {
+  button.addEventListener('click', (e) => {
+    if (e.target.closest('.todo-category-name')) return;
+    todoTag = button.dataset.tag;
+    document.querySelectorAll('.todo-tag').forEach((el) => el.classList.toggle('is-active', el === button));
+    todoSelection.clear();
+    todoSelectionAnchor = null;
+    renderList();
+  });
 });
 
-PRIORITIES.forEach((priority) => {
-  const list = document.querySelector(`.todo-list[data-priority="${priority}"]`);
-  if (!list) return;
-  list.addEventListener('click', (e) => {
+const unifiedList = document.getElementById('todo-list');
+if (unifiedList) {
+  unifiedList.addEventListener('click', (e) => {
     const item = e.target.closest('.todo-item');
     if (!item) return;
     const id = item.dataset.id;
     if (e.shiftKey) {
       e.preventDefault();
       const result = window.SlateDomain.updateRangeSelection(
-        window.SlateDomain.sortTodosForDisplay(data[priority] || []).map((todo) => todo.id),
-        [...todoSelections[priority]],
+        visibleTodos().map((todo) => todo.id),
+        [...todoSelection],
         id,
-        todoSelectionAnchors[priority],
+        todoSelectionAnchor,
         true
       );
-      todoSelections[priority] = new Set(result.selected);
-      todoSelectionAnchors[priority] = result.anchor;
-      renderList(priority);
+      todoSelection.clear();
+      result.selected.forEach((selectedId) => todoSelection.add(selectedId));
+      todoSelectionAnchor = result.anchor;
+      renderList();
       return;
     }
     const target = e.target.closest('[data-action]');
     if (!target) return;
     const action = target.dataset.action;
     if (action === 'toggle') {
-      toggleTodo(priority, id);
+      toggleTodo(id);
+    } else if (action === 'pin') {
+      const found = findTodo(id);
+      if (!found) return;
+      found.item.pinnedToday = found.item.pinnedToday !== true;
+      saveData(data);
+      renderList();
+    } else if (action === 'cycle-cat') {
+      const found = findTodo(id);
+      if (!found) return;
+      const next = PRIORITIES[(PRIORITIES.indexOf(found.bucket) + 1) % PRIORITIES.length];
+      data[found.bucket].splice(found.index, 1);
+      data[next].push(found.item);
+      saveData(data);
+      renderList();
+      showStatusToast(`已移动到「${todoCategoryNames[next] || next}」`);
     } else if (action === 'edit') {
-      const todo = (data[priority] || []).find((item) => item.id === id);
-      if (todo) {
-        editingTodo = { priority, id };
-        renderList(priority);
+      const found = findTodo(id);
+      if (found) {
+        editingTodo = { id };
+        renderList();
         requestAnimationFrame(() => document.querySelector(`.todo-item[data-id="${CSS.escape(id)}"] .todo-inline-name`)?.focus({ preventScroll: true }));
       }
     } else if (action === 'edit-deadline') {
-      const todo = (data[priority] || []).find((candidate) => candidate.id === id);
-      if (todo) openTodoEditor(priority, todo, target);
+      const found = findTodo(id);
+      if (found) openTodoEditor(found.bucket, found.item, target);
     } else if (action === 'save-edit') {
-      const todo = (data[priority] || []).find((candidate) => candidate.id === id);
+      const found = findTodo(id);
       const name = item.querySelector('.todo-inline-name')?.value.trim() || '';
-      if (!todo || !name || !todo.deadline) return;
+      if (!found || !name || !found.item.deadline) return;
       editingTodo = null;
-      editTodo(priority, id, name, todo.deadline);
+      editTodo(id, name, found.item.deadline);
     } else if (action === 'delete') {
-      deleteTodo(priority, id);
+      deleteTodo(id);
     }
   });
-  list.addEventListener('keydown', (event) => {
+  unifiedList.addEventListener('keydown', (event) => {
     const item = event.target.closest('.todo-item');
     if (!item || !event.target.matches('.todo-inline-name')) return;
     if (event.key === 'Escape') {
       editingTodo = null;
-      renderList(priority);
+      renderList();
     } else if (event.key === 'Enter' && !event.isComposing) {
       event.preventDefault();
       item.querySelector('[data-action="save-edit"]')?.click();
     }
   });
-});
+}
 
-document.querySelectorAll('.todo-bulk-delete[data-bulk-priority]').forEach((button) => {
-  button.addEventListener('click', () => {
-    const priority = button.dataset.bulkPriority;
-    const selected = todoSelections[priority];
-    if (!selected || !selected.size) return;
-    data[priority] = (data[priority] || []).filter((item) => !selected.has(item.id));
-    selected.clear();
-    todoSelectionAnchors[priority] = null;
-    saveData(data);
-    renderList(priority);
-    updateCount(priority);
-    showStatusToast('已删除所选待办');
+const bulkDeleteButton = document.getElementById('todo-bulk-delete');
+bulkDeleteButton?.addEventListener('click', () => {
+  if (!todoSelection.size) return;
+  PRIORITIES.forEach((bucket) => {
+    data[bucket] = (data[bucket] || []).filter((item) => !todoSelection.has(item.id));
   });
+  todoSelection.clear();
+  todoSelectionAnchor = null;
+  saveData(data);
+  renderList();
+  showStatusToast('已删除所选待办');
 });
 
 // ============ 首页 · 待办默认截止时间跨日刷新 ============

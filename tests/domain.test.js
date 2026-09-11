@@ -782,6 +782,49 @@ test('resampleFloat32ToPcm16 downsamples and clamps audio', () => {
   assert.deepEqual(Array.from(pcm), [32767, -32768]);
 });
 
+test('parseQuickTodoDate strips Chinese date words and resolves deadlines', () => {
+  const now = new Date(2026, 8, 12, 10, 0, 0, 0); // 2026-09-12 周六 10:00
+  const tomorrow = domain.parseQuickTodoDate('明天 14:30 交周报', now);
+  assert.equal(tomorrow.text, '交周报');
+  assert.equal(tomorrow.deadline, new Date(2026, 8, 13, 14, 30).toISOString());
+
+  const friday = domain.parseQuickTodoDate('周五 20:00 交稿', now);
+  assert.equal(friday.text, '交稿');
+  assert.equal(new Date(friday.deadline).getDay(), 5);
+  assert.equal(new Date(friday.deadline).getHours(), 20);
+
+  const afternoon = domain.parseQuickTodoDate('明天下午3点 开会', now);
+  assert.equal(afternoon.text, '开会');
+  assert.equal(afternoon.deadline, new Date(2026, 8, 13, 15, 0).toISOString());
+
+  const noDate = domain.parseQuickTodoDate('随手记一条', now);
+  assert.deepEqual(noDate, { text: '随手记一条', deadline: '' });
+
+  const dateOnly = domain.parseQuickTodoDate('9月20日 交房租', now);
+  assert.equal(dateOnly.deadline, new Date(2026, 8, 20, 23, 30).toISOString());
+});
+
+test('todoBelongsToView routes items into the four time views', () => {
+  const now = new Date(2026, 8, 12, 10, 0, 0, 0);
+  const inbox = { id: 'a', text: 'a', done: false, deadline: '' };
+  const today = { id: 'b', text: 'b', done: false, deadline: new Date(2026, 8, 12, 9).toISOString() };
+  const overdue = { id: 'c', text: 'c', done: false, deadline: new Date(2026, 8, 11, 9).toISOString() };
+  const upcoming = { id: 'd', text: 'd', done: false, deadline: new Date(2026, 8, 15, 9).toISOString() };
+  const pinned = { id: 'e', text: 'e', done: false, deadline: '', pinnedToday: true };
+  const done = { id: 'f', text: 'f', done: true };
+
+  assert.equal(domain.todoBelongsToView(inbox, 'inbox', now), true);
+  assert.equal(domain.todoBelongsToView(inbox, 'today', now), false);
+  assert.equal(domain.todoBelongsToView(today, 'today', now), true);
+  assert.equal(domain.todoBelongsToView(overdue, 'today', now), true, '过期待办留在今天视图');
+  assert.equal(domain.todoBelongsToView(upcoming, 'upcoming', now), true);
+  assert.equal(domain.todoBelongsToView(upcoming, 'today', now), false);
+  assert.equal(domain.todoBelongsToView(pinned, 'today', now), true, '手动加入今天');
+  assert.equal(domain.todoBelongsToView(pinned, 'inbox', now), false);
+  assert.equal(domain.todoBelongsToView(done, 'done', now), true);
+  assert.equal(domain.todoBelongsToView(done, 'today', now), false);
+});
+
 test('shouldTogglePanelForSpace toggles plain Space but never steals typing input', () => {
   assert.equal(shouldTogglePanelForSpace({ key: ' ', repeat: false, editable: false }), true);
   assert.equal(shouldTogglePanelForSpace({ key: 'Spacebar', repeat: false, editable: false }), true);

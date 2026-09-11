@@ -379,6 +379,122 @@
     });
   }
 
+  // ============ 待办时间视角（今天/已排期/收件箱/已完成）============
+  function startOfDay(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  function todoBelongsToView(item, view, now = new Date()) {
+    if (!item || typeof item !== 'object') return false;
+    const isDone = item.done === true;
+    if (view === 'done') return isDone;
+    if (isDone) return false;
+    const deadlineTime = Date.parse(String(item.deadline || ''));
+    const hasDeadline = Number.isFinite(deadlineTime);
+    if (view === 'today') {
+      if (item.pinnedToday === true) return true;
+      if (!hasDeadline) return false;
+      const endOfTomorrow = startOfDay(now).getTime() + 24 * 60 * 60 * 1000;
+      return deadlineTime < endOfTomorrow; // 今天到期或已过期
+    }
+    if (view === 'upcoming') {
+      if (!hasDeadline) return false;
+      const endOfTomorrow = startOfDay(now).getTime() + 24 * 60 * 60 * 1000;
+      return deadlineTime >= endOfTomorrow;
+    }
+    if (view === 'inbox') {
+      return !hasDeadline && item.pinnedToday !== true;
+    }
+    return false;
+  }
+
+  // 快速输入的自然语言日期：解析「今天/明天/后天/大后天/周X/星期X/X月X日」+「下午3点/15:30/3点半」。
+  // 返回 { text: 去掉日期词后的内容, deadline: ISO 字符串或空串 }。无时间词时落到当天 23:30。
+  function parseQuickTodoDate(rawText, now = new Date()) {
+    let text = String(rawText || '');
+    const today = startOfDay(now);
+    let day = null;
+    let hour = null;
+    let minute = null;
+
+    const strip = (re) => {
+      const match = text.match(re);
+      if (!match) return false;
+      text = text.replace(match[0], ' ');
+      return true;
+    };
+
+    // 日期词按长短排序消歧（大后天 → 后天 → 明天），允许后接其他汉字（如「明天下午」）。
+    if (strip(/今天|今日/)) day = 0;
+    else if (strip(/大后天/)) day = 3;
+    else if (strip(/后天/)) day = 2;
+    else if (strip(/明天|明日/)) day = 1;
+    else {
+      const week = text.match(/(下周|本周|周|星期|礼拜)([一二三四五六日天])/);
+      if (week) {
+        const map = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 0, 天: 0 };
+        const target = map[week[2]];
+        const isNextWeek = /下/.test(week[1]);
+        const current = now.getDay();
+        let delta = (target - current + 7) % 7;
+        if (delta === 0) delta = 7;
+        if (isNextWeek) delta += 7;
+        day = delta;
+        text = text.replace(week[0], ' ');
+      } else {
+        const md = text.match(/(\d{1,2})月(\d{1,2})[日号]/);
+        if (md) {
+          const candidate = new Date(now.getFullYear(), Number(md[1]) - 1, Number(md[2]));
+          if (!Number.isNaN(candidate.getTime())) {
+            day = Math.round((startOfDay(candidate) - today) / (24 * 60 * 60 * 1000));
+            text = text.replace(md[0], ' ');
+          }
+        }
+      }
+    }
+
+    const periodMatch = text.match(/(凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|夜里)/);
+    const period = periodMatch ? periodMatch[1] : '';
+    const time = text.match(/(\d{1,2})\s*[点时](?:\s*(半|\d{1,2})\s*分?)?/);
+    const colon = text.match(/(\d{1,2}):(\d{2})/);
+    if (time) {
+      hour = Number(time[1]);
+      minute = time[2] === '半' ? 30 : Number(time[2] || 0);
+      if (Number.isFinite(hour) && hour < 12 && /下午|傍晚|晚上|夜里/.test(period)) hour += 12;
+      if (Number.isFinite(hour) && hour === 12 && /上午|早上|清晨|凌晨/.test(period)) hour = 0;
+      // 时间词前面的时段词（下午3点）一并剥掉
+      if (periodMatch && periodMatch.index < time.index) text = text.replace(periodMatch[0], ' ');
+      text = text.replace(time[0], ' ');
+    } else if (colon) {
+      hour = Number(colon[1]);
+      minute = Number(colon[2]);
+      if (/下午|傍晚|晚上/.test(period) && hour < 12) hour += 12;
+      if (periodMatch && periodMatch.index < colon.index) text = text.replace(periodMatch[0], ' ');
+      text = text.replace(colon[0], ' ');
+    } else if (period && day !== null) {
+      if (/下午|傍晚/.test(period)) { hour = 15; minute = 0; }
+      else if (/晚上|夜里/.test(period)) { hour = 20; minute = 0; }
+      else if (/中午/.test(period)) { hour = 12; minute = 0; }
+      else { hour = 9; minute = 0; }
+      text = text.replace(periodMatch[0], ' ');
+    }
+
+    text = text.replace(/[\s,，、]+(?:之前|前|以前)\s*$/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+    if (day === null && hour === null) return { text: String(rawText || '').trim(), deadline: '' };
+    const target = new Date(now);
+    if (day !== null) target.setDate(target.getDate() + day);
+    target.setHours(
+      Number.isFinite(hour) ? hour : 23,
+      Number.isFinite(minute) ? minute : 30,
+      0,
+      0,
+    );
+    return { text: text.trim(), deadline: target.toISOString() };
+  }
+
   function filterCredentials(items, query) {
     const rows = Array.isArray(items) ? items : [];
     const keyword = String(query || '').trim().toLocaleLowerCase();
@@ -922,6 +1038,8 @@
     createTodo,
     updateTodo,
     sortTodosForDisplay,
+    todoBelongsToView,
+    parseQuickTodoDate,
     filterCredentials,
     credentialRowAction,
     visiblePanelTabs,

@@ -468,7 +468,7 @@ async function main() {
     const todoCalendarNavigation = await window.webContents.executeJavaScript(`
       new Promise((resolve) => {
         document.getElementById('tab-button-todo').click();
-        const trigger = document.querySelector('.todo-deadline-trigger[data-deadline-priority="P0"]');
+        const trigger = document.getElementById('todo-quick-deadline');
         trigger.click();
         const previous = document.getElementById('todo-calendar-previous');
         const next = document.getElementById('todo-calendar-next');
@@ -514,9 +514,8 @@ async function main() {
 
     const todoDeadlineReset = await window.webContents.executeJavaScript(`
       (() => {
-        const priority = 'P0';
-        const input = document.querySelector('.add-row input[data-priority="P0"]');
-        const trigger = document.querySelector('.todo-deadline-trigger[data-deadline-priority="P0"]');
+        const input = document.getElementById('todo-quick-input');
+        const trigger = document.getElementById('todo-quick-deadline');
         const popover = document.getElementById('todo-date-popover');
         const manuallySelected = trigger.dataset.deadline;
         const submit = (text) => {
@@ -529,34 +528,41 @@ async function main() {
           }));
         };
 
-        submit('deadline-reset-first');
-        const resetDeadline = new Date(trigger.dataset.deadline);
-        const now = new Date();
-        submit('deadline-reset-second');
+        submit('manual-deadline-item');
+        const stored = JSON.parse(localStorage.getItem('slate-todo-data'));
+        const manual = [].concat(stored.P0, stored.P1, stored.P2, stored.P3)
+          .find((item) => item.text === 'manual-deadline-item');
+        const manualKept = manual?.deadline === manuallySelected;
+        const triggerResetAfterSubmit = !trigger.dataset.deadline;
 
-        const stored = JSON.parse(localStorage.getItem('slate-todo-data'))[priority];
-        const first = stored.find((item) => item.text === 'deadline-reset-first');
-        const second = stored.find((item) => item.text === 'deadline-reset-second');
+        submit('明天 14:30 交周报');
+        const after = JSON.parse(localStorage.getItem('slate-todo-data'));
+        const parsed = [].concat(after.P0, after.P1, after.P2, after.P3)
+          .find((item) => item.text === '交周报');
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(14, 30, 0, 0);
+
+        submit('inbox-no-date-item');
+        const final = JSON.parse(localStorage.getItem('slate-todo-data'));
+        const inbox = [].concat(final.P0, final.P1, final.P2, final.P3)
+          .find((item) => item.text === 'inbox-no-date-item');
         return {
-          firstKeptManualDeadline: first?.deadline === manuallySelected,
-          secondUsedResetDeadline: second?.deadline === trigger.dataset.deadline,
-          resetSource: trigger.dataset.deadlineSource,
-          resetParts: [
-            resetDeadline.getFullYear(),
-            resetDeadline.getMonth(),
-            resetDeadline.getDate(),
-            resetDeadline.getHours(),
-            resetDeadline.getMinutes(),
-          ],
-          todayParts: [now.getFullYear(), now.getMonth(), now.getDate(), 23, 30],
+          manualKept,
+          triggerResetAfterSubmit,
+          parsedDeadline: parsed?.deadline || '',
+          expectedParsedDeadline: tomorrow.toISOString(),
+          parsedCategory: parsed ? Object.keys(final).find((key) => (final[key] || []).some((item) => item.id === parsed.id)) : '',
+          inboxHasNoDeadline: inbox ? inbox.deadline === '' : false,
           popoverHidden: popover.hidden,
         };
       })()
     `);
-    assert.equal(todoDeadlineReset.firstKeptManualDeadline, true, '当前待办应使用本次手动选择的截止时间');
-    assert.equal(todoDeadlineReset.secondUsedResetDeadline, true, '下一条待办不得沿用上一条的截止时间');
-    assert.equal(todoDeadlineReset.resetSource, 'default');
-    assert.deepEqual(todoDeadlineReset.resetParts, todoDeadlineReset.todayParts, '新建表单应重置为当天 23:30');
+    assert.equal(todoDeadlineReset.manualKept, true, '手动选过日期后，下一条应沿用该日期提交');
+    assert.equal(todoDeadlineReset.triggerResetAfterSubmit, true, '提交后日期草稿必须重置');
+    assert.equal(todoDeadlineReset.parsedDeadline, todoDeadlineReset.expectedParsedDeadline, '「明天 14:30」应解析为明天 14:30');
+    assert.notEqual(todoDeadlineReset.parsedCategory, '', '解析出的待办应落在所选分类');
+    assert.equal(todoDeadlineReset.inboxHasNoDeadline, true, '无日期词的待办应进收件箱（无截止时间）');
     assert.equal(todoDeadlineReset.popoverHidden, true, '提交后应关闭旧日期选择器');
 
     await window.webContents.executeJavaScript(`
@@ -1239,50 +1245,46 @@ async function main() {
     assert.equal(noteAudit.strandsState.parentId, 'home-recorder', '波形画布必须是录音磁贴的直接子元素');
     assert.notEqual(noteAudit.strandsState.display, 'none', '波形画布不得再被 CSS 永久隐藏');
 
-    // 首页时钟组件移除后，默认截止时间的跨日刷新曾随之失效：
-    // tickClock 在首行因缺少时钟元素而 return，把待办默认时间一起带走了。
-    const deadlineRolloverAudit = await window.webContents.executeJavaScript(`
-      (async () => {
-        const RealDate = window.Date;
-        // refreshKey 按天取值，假日期必须与真实当天错开，否则心跳不会重算。
-        let fakeNow = new RealDate(2027, 2, 9, 10, 0, 0, 0).getTime();
-        class FakeDate extends RealDate {
-          constructor(...args) {
-            if (args.length === 0) { super(fakeNow); } else { super(...args); }
-          }
-          static now() { return fakeNow; }
-        }
-        const trigger = document.querySelector('.todo-deadline-trigger[data-deadline-priority="P0"]');
-        if (!trigger) return { missingTrigger: true };
-        const expectedSame = new RealDate(2027, 2, 9, 23, 30, 0, 0).toISOString();
-        const expectedNext = new RealDate(2027, 2, 10, 23, 30, 0, 0).toISOString();
-        window.Date = FakeDate;
-        delete trigger.dataset.deadline;
-        delete trigger.dataset.deadlineSource;
-        const readDeadline = () => trigger.dataset.deadline || '';
-        const waitForDeadline = async (expected, timeout = 3000) => {
-          const startedAt = RealDate.now();
-          while (readDeadline() !== expected && RealDate.now() - startedAt < timeout) {
-            await new Promise((resolve) => setTimeout(resolve, 50));
-          }
-          return readDeadline();
+    // 待办视角化重设计：自然语言日期解析与视图归属（今天/已排期/收件箱/已完成）
+    const todoViewAudit = await window.webContents.executeJavaScript(`
+      (() => {
+        const now = new Date();
+        const parsed = window.SlateDomain.parseQuickTodoDate('周五 20:00 交稿', now);
+        const date = parsed.deadline ? new Date(parsed.deadline) : null;
+        const noDate = window.SlateDomain.parseQuickTodoDate('随手记一条', now);
+        const views = {
+          inboxItem: { id: 'a', text: 'a', done: false, deadline: '' },
+          todayItem: { id: 'b', text: 'b', done: false, deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0).toISOString() },
+          overdueItem: { id: 'c', text: 'c', done: false, deadline: new Date(now.getTime() - 3600000).toISOString() },
+          upcomingItem: { id: 'd', text: 'd', done: false, deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 3, 9, 0).toISOString() },
+          pinnedItem: { id: 'e', text: 'e', done: false, deadline: '', pinnedToday: true },
+          doneItem: { id: 'f', text: 'f', done: true },
         };
-        const sameDay = await waitForDeadline(expectedSame);
-        const sameDaySource = trigger.dataset.deadlineSource || '';
-        fakeNow = new RealDate(2027, 2, 10, 0, 5, 0, 0).getTime();
-        const nextDay = await waitForDeadline(expectedNext);
-        window.Date = RealDate;
-        return { missingTrigger: false, sameDay, sameDaySource, nextDay, expectedSame, expectedNext };
+        const belongs = (item, view) => window.SlateDomain.todoBelongsToView(item, view, now);
+        return {
+          parsedTextOk: parsed.text === '交稿',
+          parsedIsFriday: date ? date.getDay() === 5 : false,
+          parsedTimeOk: date ? date.getHours() === 20 && date.getMinutes() === 0 : false,
+          noDateEmpty: noDate.deadline === '' && noDate.text === '随手记一条',
+          inboxInInbox: belongs(views.inboxItem, 'inbox') && !belongs(views.inboxItem, 'today'),
+          todayInToday: belongs(views.todayItem, 'today'),
+          overdueInToday: belongs(views.overdueItem, 'today'),
+          upcomingInUpcoming: belongs(views.upcomingItem, 'upcoming') && !belongs(views.upcomingItem, 'today'),
+          pinnedInToday: belongs(views.pinnedItem, 'today') && belongs(views.pinnedItem, 'inbox') === false,
+          doneOnlyInDone: belongs(views.doneItem, 'done') && !belongs(views.doneItem, 'today'),
+        };
       })()
     `);
-    assert.equal(deadlineRolloverAudit.missingTrigger, false, '待办默认截止时间触发器必须存在');
-    assert.equal(deadlineRolloverAudit.sameDay, deadlineRolloverAudit.expectedSame, '当天创建应默认到当天 23:30');
-    assert.equal(deadlineRolloverAudit.sameDaySource, 'default', '默认截止时间必须标记为 default 而非 manual');
-    assert.equal(
-      deadlineRolloverAudit.nextDay,
-      deadlineRolloverAudit.expectedNext,
-      '跨日后默认截止时间必须自动滚到新的一天（曾因时钟组件移除而失效）'
-    );
+    assert.equal(todoViewAudit.parsedTextOk, true, '「周五 20:00 交稿」应把日期词从正文剥离');
+    assert.equal(todoViewAudit.parsedIsFriday, true, '周X 应解析到下一个周五');
+    assert.equal(todoViewAudit.parsedTimeOk, true, '20:00 应解析为 20 点 0 分');
+    assert.equal(todoViewAudit.noDateEmpty, true, '无日期词时不得虚构截止时间');
+    assert.equal(todoViewAudit.inboxInInbox, true, '无日期待办应落在收件箱');
+    assert.equal(todoViewAudit.todayInToday, true, '今天到期的应落在今天');
+    assert.equal(todoViewAudit.overdueInToday, true, '过期待办应留在今天视图置顶处理');
+    assert.equal(todoViewAudit.upcomingInUpcoming, true, '未来日期应落在已排期');
+    assert.equal(todoViewAudit.pinnedInToday, true, '手动加入今天的事项应出现在今天视图');
+    assert.equal(todoViewAudit.doneOnlyInDone, true, '已完成只出现在已完成视图');
     assert.equal(autoLayoutMotionAudit.rapidGhostsAfter, 0, '连续切换结束后不得残留 Auto Layout ghost');
   } finally {
     if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach();
