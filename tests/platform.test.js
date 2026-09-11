@@ -27,10 +27,10 @@ test('Windows capabilities cannot enable Mac-only integrations', () => {
 });
 
 test('platform filtering leaves saved preferences intact and recovers a usable home', () => {
-  const registry = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
-  const hidden = ['recorder', 'mirror', 'note', 'commands'];
+  const registry = ['launcher', 'recorder', 'windows', 'note', 'commands'];
+  const hidden = ['recorder', 'note', 'commands'];
   const before = [...hidden];
-  assert.deepEqual(platform.effectiveHiddenModules(hidden, registry, ['windows']), ['recorder', 'windows', 'mirror', 'note', 'commands']);
+  assert.deepEqual(platform.effectiveHiddenModules(hidden, registry, ['windows']), ['recorder', 'windows', 'note', 'commands']);
   assert.deepEqual(hidden, before);
   assert.deepEqual(platform.effectiveHiddenModules(hidden, registry, []), hidden);
 });

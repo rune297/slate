@@ -48,7 +48,6 @@ test('homepage visibility has one storage key, exact validation, and lifecycle e
   assert.match(appJs, /window\.SlateHome\s*=/);
   assert.match(appJs, /slate:home-modules-changed/);
   assert.match(appJs, /slate:home-layout-error/);
-  assert.match(appJs, /stopMirror\(\)/);
   assert.match(appJs, /new Set\(homeTiles\.map\(\(tile\) => tile\.dataset\.homeModule\)\)/);
 });
 
@@ -56,7 +55,7 @@ test('settings exposes exactly one switch for every homepage widget', () => {
   const switches = [...html.matchAll(/data-settings-home-module="([^"]+)"/g)]
     .map((match) => match[1]);
   assert.deepEqual(switches, [
-    'launcher', 'recorder', 'windows', 'mirror', 'note', 'commands',
+    'launcher', 'recorder', 'windows', 'note', 'commands',
   ]);
   assert.match(workspaceJs, /isRecordingActive/);
   assert.match(workspaceJs, /recording_active/);

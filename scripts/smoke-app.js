@@ -86,8 +86,7 @@ async function main() {
   await until(() => evaluate('Boolean(window.SlateHome && window.SlateWorkspace && window.slateAPI)'), 'renderer initialization');
   assert.equal(await evaluate('window.slateAPI.platform'), 'win32');
   assert.equal(await evaluate('window.slateAPI.getAppSettings().then(s => s.features.clip)'), false);
-  assert.equal(await evaluate('document.getElementById("mirror-video").srcObject === null'), true);
-  assert.deepEqual(await evaluate('window.SlateHome.getVisibility().visibleIds'), ['launcher', 'recorder', 'mirror', 'note', 'commands']);
+  assert.deepEqual(await evaluate('window.SlateHome.getVisibility().visibleIds'), ['launcher', 'recorder', 'note', 'commands']);
   assert.equal(await evaluate('window.SlateHome.setModuleVisible("windows", true).ok'), false);
   assert.equal(await evaluate('window.slateAPI.listWindows().then(r => r.error)'), 'unsupported');
   await evaluate('document.getElementById("slate").click()');
@@ -118,11 +117,7 @@ async function main() {
       navigator.mediaDevices.getUserMedia = async (...args) => {
         const stream = await original(...args); window.smokeTracks.push(...stream.getTracks()); return stream;
       };
-      document.getElementById('mirror-stage').click();
     })()`);
-    await until(() => evaluate('window.smokeTracks.some(t => t.kind === "video" && t.readyState === "live")'), 'fake camera starts on click');
-    await evaluate('document.getElementById("tab-button-todo").click()');
-    await until(() => evaluate('window.smokeTracks.every(t => t.readyState === "ended")'), 'camera released leaving home');
     await evaluate('document.getElementById("tab-button-home").click(); document.getElementById("record-start").click()');
     await until(() => evaluate('window.SlateWorkspace.isRecordingActive() && window.smokeTracks.some(t => t.kind === "audio" && t.readyState === "live")'), 'fake recording starts');
     await delay(1500);
@@ -140,7 +135,7 @@ async function main() {
   await until(() => evaluate('window.slateAPI.listTaskCompletions().then(r => r.some(i => i.title === "Windows smoke complete"))'), 'notification recorded');
   await evaluate('document.getElementById("tab-button-settings").click()');
   await delay(300);
-  assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-settings-home-module]")).filter(i => !i.closest("label").hidden).map(i => i.dataset.settingsHomeModule)'), ['launcher', 'recorder', 'mirror', 'note', 'commands']);
+  assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-settings-home-module]")).filter(i => !i.closest("label").hidden).map(i => i.dataset.settingsHomeModule)'), ['launcher', 'recorder', 'note', 'commands']);
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(evidence, retained ? 'retained.png' : 'windows-settings.png'), Buffer.from(screenshot.data, 'base64'));
   assert.deepEqual(exceptions, [], 'No uncaught renderer errors');

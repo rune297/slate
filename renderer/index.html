@@ -149,24 +149,6 @@
                 </div>
               </section>
 
-              <!-- 镜子：静态人像封面；点击切换实时镜头 -->
-              <section class="tile home-mirror" data-home-module="mirror" data-widget-size="medium">
-                <button class="mirror-stage" id="mirror-stage" type="button" aria-label="打开实时镜子" aria-pressed="false">
-                  <img class="mirror-photo" src="assets/mirror-portrait.jpg" alt="" draggable="false" />
-                  <img class="mirror-photo mirror-liquid-layer" src="assets/mirror-portrait.jpg" alt="" draggable="false" />
-                  <video class="mirror-video" id="mirror-video" muted playsinline aria-hidden="true"></video>
-                  <canvas class="mirror-water-canvas" id="mirror-water-canvas" aria-hidden="true"></canvas>
-                  <span class="mirror-pixel-reveal" id="mirror-pixel-reveal" aria-hidden="true"></span>
-                  <span class="mirror-ripple" aria-hidden="true"></span>
-                  <svg class="mirror-filter-defs" width="0" height="0" aria-hidden="true">
-                    <filter id="mirror-liquid-filter" x="-15%" y="-15%" width="130%" height="130%">
-                      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.022" numOctaves="2" seed="7" result="noise" />
-                      <feDisplacementMap id="mirror-displacement" in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="B" />
-                    </filter>
-                  </svg>
-                </button>
-              </section>
-
               <!-- 速记 -->
               <section class="tile home-note" data-home-module="note" data-widget-size="large">
                 <div class="note-toolbar" role="toolbar" aria-label="随笔记操作">
@@ -432,7 +414,6 @@
                     <label><span><b>快速启动</b><small>常用软件一键打开</small></span><input type="checkbox" data-settings-home-module="launcher" aria-label="显示快速启动" /><i aria-hidden="true"></i></label>
                     <label><span><b>快速录音</b><small data-home-module-setting-note="recorder">录音与转写</small></span><input type="checkbox" data-settings-home-module="recorder" aria-label="显示快速录音" /><i aria-hidden="true"></i></label>
                     <label><span><b>当前窗口</b><small>窗口快速切换</small></span><input type="checkbox" data-settings-home-module="windows" aria-label="显示当前窗口" /><i aria-hidden="true"></i></label>
-                    <label><span><b>镜子</b><small>相机与封面</small></span><input type="checkbox" data-settings-home-module="mirror" aria-label="显示镜子" /><i aria-hidden="true"></i></label>
                     <label><span><b>随笔记</b><small>首页快速记录</small></span><input type="checkbox" data-settings-home-module="note" aria-label="显示随笔记" /><i aria-hidden="true"></i></label>
                     <label><span><b>常用指令</b><small>提示词快捷入口</small></span><input type="checkbox" data-settings-home-module="commands" aria-label="显示常用指令" /><i aria-hidden="true"></i></label>
                   </div>
@@ -440,16 +421,6 @@
               </div>
 
               <div class="settings-column settings-column-secondary">
-                <section class="tile settings-card settings-mirror-card">
-                  <img id="settings-mirror-preview" src="assets/mirror-portrait.jpg" alt="当前首页镜子配图" draggable="false" />
-                  <div>
-                    <span class="tile-label">首页镜子</span>
-                    <strong>封面图片</strong>
-                    <p>支持 PNG、JPG、WebP 与 HEIC，替换后首页立即同步。</p>
-                    <button class="workspace-button compact" id="settings-mirror-choose" type="button">选择图片…</button>
-                  </div>
-                </section>
-
                 <section class="tile settings-card settings-device-card">
                   <div class="settings-card-heading">
                     <div><span class="tile-label">这台电脑</span><strong>本机与唤出</strong></div>

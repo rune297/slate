@@ -253,7 +253,6 @@ const CREDENTIALS_VAULT_FILE = 'credentials.vault.json';
 const APP_SETTINGS_FILE = 'app-settings.json';
 const WORKSPACE_SETTINGS_FILE = 'workspace-settings.json';
 const WORKSPACE_DATA_FILE = 'workspace.json';
-const MIRROR_IMAGE_FILE = 'mirror-cover.jpg';
 const workspacePersistenceGate = createWorkspacePersistenceGate();
 const TRANSCRIPTION_MODEL = 'qwen3-asr-flash-realtime';
 const TRANSCRIPTION_SAMPLE_RATE = 16000;
@@ -1502,6 +1501,13 @@ function createWindow() {
       cameraBlurDeferred = true;
       return;
     }
+    // 失焦但光标还在面板矩形内：多半是点在了面板的透明留白上，点击穿透到
+    // 背后的窗口抢走了焦点。用户预期「点在窗口里不收起」，保持展开。
+    const cursor = screen.getCursorScreenPoint();
+    if (isPointInPanel(cursor.x, cursor.y, DISMISS_EDGE_MARGIN_PX)) {
+      debugLog('blur but cursor inside panel, keep open');
+      return;
+    }
     requestRendererCollapse();
   });
 
@@ -1649,7 +1655,7 @@ function copyWorkspaceAssets(sourceRoot, targetRoot) {
       fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: false });
     } catch (error) {}
   }
-  for (const filename of [WORKSPACE_DATA_FILE, MIRROR_IMAGE_FILE]) {
+  for (const filename of [WORKSPACE_DATA_FILE]) {
     const source = path.join(sourceRoot, filename);
     const target = path.join(targetRoot, filename);
     try {
@@ -1754,45 +1760,6 @@ function openRendererPanel(channel) {
   else send();
 }
 
-function mirrorImagePath() {
-  return workspacePath(MIRROR_IMAGE_FILE);
-}
-
-function mirrorImageDataUrl() {
-  try {
-    const image = nativeImage.createFromPath(mirrorImagePath());
-    if (image.isEmpty()) return null;
-    return image.toDataURL();
-  } catch (error) {
-    return null;
-  }
-}
-
-async function chooseMirrorImage() {
-  const result = await showOwnedOpenDialog({
-    title: '替换镜子配图',
-    properties: ['openFile'],
-    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'heic'] }],
-  });
-  const selected = !result.canceled && result.filePaths && result.filePaths[0];
-  if (!selected) return { ok: true, canceled: true };
-  try {
-    const image = nativeImage.createFromPath(selected);
-    if (image.isEmpty()) throw new Error('invalid_image');
-    const size = image.getSize();
-    if (!size.width || !size.height || size.width * size.height > 60_000_000) throw new Error('image_too_large');
-    fs.writeFileSync(mirrorImagePath(), image.toJPEG(92), { mode: 0o600 });
-    const dataUrl = mirrorImageDataUrl();
-    if (dataUrl && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('mirror:image-changed', dataUrl);
-    }
-    return { ok: true, canceled: false, dataUrl };
-  } catch (error) {
-    await dialog.showMessageBox({ type: 'error', title: '无法替换配图', message: '请选择一张有效且尺寸适中的图片。' });
-    return { ok: false, error: 'invalid_image' };
-  }
-}
-
 function refreshTrayMenu() {
   if (!tray) return;
   const autoLaunch = isAutoLaunchEnabled();
@@ -1802,10 +1769,6 @@ function refreshTrayMenu() {
     {
       label: 'API 配置…',
       click: () => openRendererPanel('app:open-api-settings'),
-    },
-    {
-      label: '替换镜子配图…',
-      click: chooseMirrorImage,
     },
     {
       label: '显示功能',
@@ -2728,9 +2691,6 @@ async function rememberPasteTarget() {
   }
   return previousPasteTarget;
 }
-
-ipcMain.handle('mirror:get-image', () => mirrorImageDataUrl());
-ipcMain.handle('mirror:choose-image', () => chooseMirrorImage());
 
 function getCredentialsVaultPath() {
   return path.join(app.getPath('userData'), CREDENTIALS_VAULT_FILE);

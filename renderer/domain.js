@@ -902,19 +902,6 @@
       && !event.altKey;
   }
 
-  function shouldHandleMirrorPinch(event) {
-    return Boolean(event && event.live === true && event.ctrlKey === true);
-  }
-
-  function adjustMirrorZoom(currentZoom, deltaY, minZoom = 1, maxZoom = 2.6) {
-    const min = Number.isFinite(minZoom) ? minZoom : 1;
-    const max = Number.isFinite(maxZoom) && maxZoom >= min ? maxZoom : 2.6;
-    const current = Number.isFinite(currentZoom) ? currentZoom : min;
-    const delta = Number.isFinite(deltaY) ? deltaY : 0;
-    const next = Math.max(min, Math.min(max, current - delta * 0.002));
-    return Math.round(next * 100) / 100;
-  }
-
   return {
     normalizeHttpUrl,
     classifyLink,
@@ -965,7 +952,5 @@
     calculateAudioLevel,
     resampleFloat32ToPcm16,
     shouldTogglePanelForSpace,
-    shouldHandleMirrorPinch,
-    adjustMirrorZoom,
   };
 });

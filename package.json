@@ -81,7 +81,7 @@
         "LSUIElement": true,
         "NSHighResolutionCapable": true,
         "CFBundleDisplayName": "Slate",
-        "NSCameraUsageDescription": "Slate 需要使用摄像头来显示「镜子」预览。",
+        "NSMicrophoneUsageDescription": "Slate 需要使用麦克风进行录音与实时转写。",
         "NSMicrophoneUsageDescription": "Slate 需要使用麦克风来录音并生成转写文本。",
         "NSAppleEventsUsageDescription": "Slate 需要控制「系统事件」来枚举并聚焦当前窗口。"
       }

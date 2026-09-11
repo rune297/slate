@@ -215,7 +215,6 @@ async function main() {
             display: getComputedStyle(page).display,
             columns: getComputedStyle(page).gridTemplateColumns.split(' ').filter(Boolean).length,
             api: Boolean(document.getElementById('settings-api-configure')),
-            mirror: Boolean(document.getElementById('settings-mirror-choose')),
             features: document.querySelectorAll('[data-settings-feature]').length,
             homeModules: document.querySelectorAll('[data-settings-home-module]').length,
             shortcut: Boolean(document.getElementById('settings-shortcut-change')),
@@ -239,9 +238,8 @@ async function main() {
       display: 'grid',
       columns: 2,
       api: true,
-      mirror: true,
       features: 6,
-      homeModules: 6,
+      homeModules: 5,
       shortcut: true,
       defaultTab: { exists: true, value: 'home', options: 8 },
       workspace: true,
@@ -568,7 +566,6 @@ async function main() {
           launcher: ['.launcher-grid', '.launcher-add'],
           recorder: ['.recorder-head', '.home-transcript:not([hidden])', '.recorder-controls'],
           windows: ['.tile-head', '.window-list'],
-          mirror: ['.mirror-stage'],
           note: ['.note-toolbar', '.note-body'],
           commands: ['.tile-head', '.command-add', '.command-list'],
         };
@@ -668,7 +665,7 @@ async function main() {
           assert.equal(overlaps, false, '首页组件矩形不得重叠');
         }
       }
-      if (visibleCount < 6) {
+      if (visibleCount < 5) {
         assert.ok(measurement.sizeControls.every((control) => control.hidden && control.disabled && control.tabIndex === -1));
       } else {
         assert.ok(measurement.sizeControls.every((control) => !control.hidden && !control.disabled && control.tabIndex === 0));
@@ -679,16 +676,16 @@ async function main() {
       window.setSize(width, height);
       const matrix = await window.webContents.executeJavaScript(`
         (async () => {
-          const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+          const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
           ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
           const results = [];
-          for (let count = 6; count >= 1; count -= 1) {
+          for (let count = 5; count >= 1; count -= 1) {
             document.getElementById('tab-button-home').click();
             await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             results.push(window.__measureHomepage());
             if (count > 1) {
               document.getElementById('tab-button-settings').click();
-              const input = document.querySelector('[data-settings-home-module="' + ids[6 - count] + '"]');
+              const input = document.querySelector('[data-settings-home-module="' + ids[5 - count] + '"]');
               input.checked = false;
               input.dispatchEvent(new Event('change', { bubbles: true }));
               await new Promise((resolve) => setTimeout(resolve, 20));
@@ -697,7 +694,7 @@ async function main() {
           return results;
         })()
       `);
-      matrix.forEach((measurement, index) => assertHomepageMeasurement(measurement, 6 - index));
+      matrix.forEach((measurement, index) => assertHomepageMeasurement(measurement, 5 - index));
 
       const finalWidgetGuard = await window.webContents.executeJavaScript(`
         (async () => {
@@ -716,15 +713,15 @@ async function main() {
       `);
       assert.equal(finalWidgetGuard.checked, true);
       assert.equal(finalWidgetGuard.visibleCount, 1);
-      assert.equal(finalWidgetGuard.storedCount, 5);
+      assert.equal(finalWidgetGuard.storedCount, 4);
       assert.match(finalWidgetGuard.message, /至少保留一个/);
     }
 
     const transactionAudit = await window.webContents.executeJavaScript(`
       (() => {
-        const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
-        const first = window.SlateHome.setModuleVisible('mirror', false);
+        const first = window.SlateHome.setModuleVisible('recorder', false);
         const second = window.SlateHome.setModuleVisible('note', false);
         const rapidHidden = [...window.SlateHome.getVisibility().hiddenIds];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
@@ -780,7 +777,7 @@ async function main() {
     `);
     assert.equal(transactionAudit.first.ok, true);
     assert.equal(transactionAudit.second.ok, true);
-    assert.deepEqual(transactionAudit.rapidHidden, ['mirror', 'note']);
+    assert.deepEqual(transactionAudit.rapidHidden, ['recorder', 'note']);
     assert.equal(transactionAudit.noop.changed, false);
     assert.equal(transactionAudit.eventCount, 0);
     assert.equal(transactionAudit.noOpStorageStable, true);
@@ -793,7 +790,7 @@ async function main() {
 
     const persistenceAndRecorderAudit = await window.webContents.executeJavaScript(`
       (() => {
-        const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         const originalSetItem = Storage.prototype.setItem;
         const storedBefore = localStorage.getItem('slate-home-hidden-modules-v1');
@@ -801,7 +798,7 @@ async function main() {
           if (key === 'slate-home-hidden-modules-v1') throw new Error('simulated quota failure');
           return originalSetItem.call(this, key, value);
         };
-        const degraded = window.SlateHome.setModuleVisible('mirror', false);
+        const degraded = window.SlateHome.setModuleVisible('windows', false);
         const degradedState = window.SlateHome.getVisibility();
         const degradedStatus = document.getElementById('settings-home-module-status').textContent;
         const degradedStorageStable = storedBefore === localStorage.getItem('slate-home-hidden-modules-v1');
@@ -920,7 +917,7 @@ async function main() {
 
     const lifecycleAudit = await window.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         document.getElementById('tab-button-home').click();
         document.getElementById('app').classList.remove('collapsed', 'closing', 'opening');
@@ -979,7 +976,7 @@ async function main() {
 
     const autoLayoutMotionAudit = await window.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         document.getElementById('tab-button-home').click();
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));

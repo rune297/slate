@@ -69,9 +69,6 @@ contextBridge.exposeInMainWorld('slateAPI', {
   onNewClipEntry: (cb) => subscribe('clipboard:new-entry', (evt, entry) => cb(entry)),
   onOpenClip: (cb) => subscribe('app:open-clip', () => cb()),
   onOpenApiSettings: (cb) => subscribe('app:open-api-settings', () => cb()),
-  getMirrorImage: () => ipcRenderer.invoke('mirror:get-image'),
-  chooseMirrorImage: () => ipcRenderer.invoke('mirror:choose-image'),
-  onMirrorImageChanged: (cb) => subscribe('mirror:image-changed', (event, dataUrl) => cb(dataUrl)),
   onTaskNotification: (cb) =>
     subscribe('task-notification:show', (event, notification) => cb(notification)),
   onTaskNotificationQueue: (cb) =>
