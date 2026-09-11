@@ -633,16 +633,11 @@ async function setMode(expanded) {
   }
 }
 
-slate.addEventListener('click', (e) => {
-  e.stopPropagation();
-  setMode(!isExpanded);
-});
-
 slate.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   e.preventDefault();
   if (e.repeat) return;
-  setMode(!isExpanded);
+  setMode(true);
 });
 
 document.addEventListener('keydown', (event) => {
@@ -969,18 +964,10 @@ function openShortcutRecorder() {
 window.slateAPI?.onRecordShortcut?.(openShortcutRecorder);
 document.addEventListener('slate:record-shortcut', openShortcutRecorder);
 
-// 顶栏空白处点按收起——黑条在展开态已退场，由顶栏接替这一角色。
-// 排除交互区（Tab / 按钮 / 输入 / 搜索框），品牌区与空白处都可收起（明确的收起热区）。
-// 注意：home/todo 下搜索框隐藏会让 .topbar-mid 高度塌成 0，点击其实落在 .topbar 上，
-// 所以必须挂在 .topbar 上并用 closest 排除，不能只认 .topbar-mid 本体。
-const topbarEl = document.querySelector('.topbar');
-if (topbarEl) {
-  topbarEl.addEventListener('click', (e) => {
-    if (e.target.closest('.tabs, button, input')) return;
-    e.stopPropagation();
-    setMode(false);
-  });
-}
+// 顶栏不再做点击收起热区：用户期望「点在窗口里就不收起」，
+// 面板展开态只靠快捷键 / Esc / 点击窗口外 / 托盘来收起。
+// 折叠条 slate 也取消点击打开（改为快捷键 + 顶部手势/悬停唤出）。
+// 保留键盘 Enter/空格作为无障碍唤出快捷键的一部分（与全局快捷键一致）。
 
 function initTab() {
   setActiveTab('home');
