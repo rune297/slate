@@ -46,8 +46,6 @@ const {
   screenRecordingProbePolicy,
   taskNotificationWindowPolicy,
   updateFeaturePreference,
-  controlSodaMusic,
-  sodaShortcutSpec,
   selectTranscriptionSettings,
   createWorkspacePersistenceGate,
   hoverSpacePollingPolicy,
@@ -258,7 +256,6 @@ const WORKSPACE_SETTINGS_FILE = 'workspace-settings.json';
 const WORKSPACE_DATA_FILE = 'workspace.json';
 const MIRROR_IMAGE_FILE = 'mirror-cover.jpg';
 const workspacePersistenceGate = createWorkspacePersistenceGate();
-const SODA_MUSIC_APP = '/Applications/汽水音乐.app';
 const TRANSCRIPTION_MODEL = 'qwen3-asr-flash-realtime';
 const TRANSCRIPTION_SAMPLE_RATE = 16000;
 const TRANSCRIPTION_FINISH_TIMEOUT_MS = 7000;
@@ -310,7 +307,6 @@ let mediaPermissionRequests = 0;
 let mediaPermissionBatchHadCamera = false;
 let transientSystemInteractionRequests = 0;
 let cameraBlurDeferred = false;
-let sodaMusicPlaying = false;
 const mediaPermissionCoordinator = createForegroundMediaPermissionCoordinator();
 
 let notificationWindow = null;
@@ -537,7 +533,7 @@ function hideWindowAfterCollapse() {
 
 // ============ 顶部热区唤出 ============
 // 不在屏幕上留任何常驻元素：收起态把窗口搬到屏幕上方之外（保持窗口"可见"，
-// 避免 Electron 把隐藏窗口的定时器降频，番茄钟和到期提醒照常走）。
+// 避免 Electron 把隐藏窗口的定时器降频，待办到期提醒照常走）。
 function parkedY() {
   // 取所有屏幕的最上沿再往上挪，避免多屏上下排列时停到另一块屏上。
   try {
@@ -1127,21 +1123,6 @@ ipcMain.handle('todos:schedule-reminders', (event, items) => {
   return { ok: true, count: scheduledTodoReminders.length };
 });
 
-ipcMain.handle('pomodoro:notify', (event, minutes) => {
-  const safeMinutes = Math.max(1, Math.min(120, Math.round(Number(minutes) || 25)));
-  const completedAt = Date.now();
-  const notification = {
-    eventId: `pomodoro-${completedAt}`,
-    taskId: `pomodoro-${completedAt}`,
-    source: 'pomodoro',
-    project: '番茄钟',
-    title: '专注完成',
-    body: `${safeMinutes} 分钟专注计时已结束`,
-    completedAt,
-  };
-  return { ok: true, result: enqueueTaskNotification(notification) };
-});
-
 function getTaskNotificationBounds(display) {
   const d = display || getTargetDisplay();
   const width = Math.min(
@@ -1489,7 +1470,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       // 停靠态窗口在屏幕外，不能让 Chromium 把定时器降频，
-      // 否则番茄钟、待办到期提醒在收起时会走慢。
+      // 否则待办到期提醒在收起时会走慢。
       backgroundThrottling: false,
     },
   });
@@ -2088,7 +2069,7 @@ ipcMain.handle('shell:open-privacy-settings', (event, pane) => {
 // ============ 启动时的权限自检 ============
 // DMG 装的是全新二进制，TCC 授权不会从开发版继承，而这几项缺失时的表现都是「静默失效」：
 // 缺「屏幕录制」→ CGWindowList 照样返回窗口但标题全空，当前窗口看起来像真的没窗口；
-// 缺「辅助功能」→ 枚举、聚焦窗口和汽水音乐发按键全部无效。
+// 缺「辅助功能」→ 枚举和聚焦窗口全部无效。
 // 系统对前者根本不弹提示，所以只能由应用自己说，否则用户完全无从下手。
 const PERMISSION_PROMPT_SKIP_FILE = 'permission-prompt-skipped';
 
@@ -2127,7 +2108,7 @@ async function promptForMissingPermissions() {
     type: 'info',
     message: `Slate 需要「${names.join('」和「')}」权限`,
     detail: [
-      '缺少这些权限时，「当前窗口」会读不到任何窗口，汽水音乐的播放控制也不会生效。',
+      '缺少这些权限时，「当前窗口」会读不到任何窗口。',
       '',
       '授权后需要重新启动 Slate 才会生效。',
       'ad-hoc 签名的应用每次重新打包都要重新授权一次，这是没有开发者账号分发的固有限制。',
@@ -2856,95 +2837,100 @@ ipcMain.handle('credentials:copy', async (event, payload) => {
   return true;
 });
 
-function sodaMusicRunning() {
-  return new Promise((resolve) => {
-    execFile('/usr/bin/pgrep', ['-f', '^/Applications/汽水音乐\\.app/Contents/MacOS/汽水音乐$'], { timeout: 1500 }, (error) => resolve(!error));
-  });
+// ============ 快速启动：常用软件 ============
+// 用户在首页「快速启动」里自定义常用软件。点击时先尝试把已在运行的实例
+// 带回前台（窗口堆叠时不用先一个个最小化再回桌面找图标），没有运行才启动新实例。
+const LAUNCHER_ICON_CACHE = new Map();
+
+function launcherDisplayName(targetPath) {
+  return path.basename(targetPath).replace(/\.(exe|lnk|bat|cmd|url|appref-ms|app)$/i, '');
 }
 
-function launchSodaMusic() {
+async function readExecutableIcon(targetPath) {
+  const cached = LAUNCHER_ICON_CACHE.get(targetPath);
+  if (cached !== undefined) return cached;
+  let icon = null;
+  try {
+    const image = await withTimeout(app.getFileIcon(targetPath, { size: 'normal' }), 2500, null);
+    if (image && !image.isEmpty()) icon = image.toDataURL();
+  } catch (error) {
+    icon = null;
+  }
+  LAUNCHER_ICON_CACHE.set(targetPath, icon);
+  return icon;
+}
+
+function runWindowsPowerShell(script, timeout = 3500) {
   return new Promise((resolve) => {
-    const cleanEnvironment = { ...process.env };
-    delete cleanEnvironment.ELECTRON_RUN_AS_NODE;
-    cleanEnvironment.XPC_SERVICE_NAME = '0';
     execFile(
-      '/usr/bin/open',
-      [SODA_MUSIC_APP],
-      { timeout: 4000, env: cleanEnvironment },
-      (error) => resolve(!error)
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { timeout, windowsHide: true },
+      (error, stdout) => resolve(error ? '' : String(stdout || '').trim())
     );
   });
 }
 
-const SODA_SHORTCUT_JXA = `
-function run(argv) {
-  const keyCode = Number(argv[0]);
-  const usesCommand = String(argv[1] || '') === '1';
-  const dismissOverlays = String(argv[2] || '') === '1';
-  const processes = Application('System Events').applicationProcesses.whose({ bundleIdentifier: 'com.soda.music' })();
-  if (!processes.length) return 'missing';
-  processes[0].frontmost = true;
-  delay(0.35);
-  const systemEvents = Application('System Events');
-  if (!Number.isFinite(keyCode)) return 'invalid';
-  if (dismissOverlays) {
-    systemEvents.keyCode(53);
-    delay(0.15);
-  }
-  if (usesCommand) systemEvents.keyCode(keyCode, { using: 'command down' });
-  else systemEvents.keyCode(keyCode);
-  return 'ok';
-}`;
-
-async function sendSodaShortcut(action) {
-  if (process.platform !== 'darwin') return { ok: false, error: 'unsupported' };
-  if (!systemPreferences.isTrustedAccessibilityClient(true)) {
-    return { ok: false, error: 'accessibility_permission_required' };
-  }
-  const shortcut = sodaShortcutSpec(action);
-  if (!shortcut) return { ok: false, error: 'invalid_action' };
-  try {
-    const result = await runJxa(SODA_SHORTCUT_JXA, [
-      shortcut.keyCode,
-      shortcut.command ? '1' : '0',
-      shortcut.dismissOverlays ? '1' : '0',
-    ]);
-    return result === 'ok' ? { ok: true } : { ok: false, error: 'soda_control_failed' };
-  } catch (error) {
-    console.warn('[music] failed to send Soda Music shortcut', error && error.message || error);
-    return { ok: false, error: 'soda_control_failed' };
-  }
+async function activateRunningApp(targetPath) {
+  if (process.platform !== 'win32' || !/\.exe$/i.test(targetPath)) return false;
+  const processName = path.basename(targetPath, path.extname(targetPath));
+  if (!processName) return false;
+  const escaped = processName.replace(/'/g, "''");
+  const output = await runWindowsPowerShell(
+    [
+      `$name = '${escaped}'`,
+      'if (-not $name) { "none"; exit }',
+      '$p = Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1',
+      'if ($p) { (New-Object -ComObject WScript.Shell).AppActivate($p.Id) | Out-Null; "activated" } else { "none" }',
+    ].join('; ')
+  );
+  return output === 'activated';
 }
 
-ipcMain.handle('music:status', async () => {
-  const installed = fs.existsSync(SODA_MUSIC_APP);
-  const running = installed ? await sodaMusicRunning() : false;
-  if (!running) sodaMusicPlaying = false;
+ipcMain.handle('launcher:choose', async () => {
+  const result = await showOwnedOpenDialog({
+    title: '选择要添加的软件',
+    buttonLabel: '添加',
+    properties: ['openFile'],
+    filters: process.platform === 'win32'
+      ? [
+        { name: '程序与快捷方式', extensions: ['exe', 'lnk', 'bat', 'cmd', 'appref-ms'] },
+        { name: '全部文件', extensions: ['*'] },
+      ]
+      : [{ name: '全部文件', extensions: ['*'] }],
+  });
+  if (!result || result.canceled || !Array.isArray(result.filePaths) || !result.filePaths.length) {
+    return { ok: false, error: 'cancelled' };
+  }
+  const targetPath = result.filePaths[0];
   return {
-    installed,
-    running,
-    sessionActive: running,
-    playing: running && sodaMusicPlaying,
-    title: '',
-    artist: '',
-    icon: installed ? await readSystemAppIconNow(SODA_MUSIC_APP) : null,
+    ok: true,
+    app: {
+      path: targetPath,
+      name: launcherDisplayName(targetPath),
+      icon: await readExecutableIcon(targetPath),
+    },
   };
 });
 
-ipcMain.handle('music:control', async (event, action) => {
-  if (process.platform !== 'darwin') return { ok: false, error: 'unsupported' };
-  if (!fs.existsSync(SODA_MUSIC_APP)) return { ok: false, error: 'not_installed' };
-  const result = await controlSodaMusic(action, {
-    isRunning: sodaMusicRunning,
-    launch: launchSodaMusic,
-    sendShortcut: sendSodaShortcut,
-  }, sodaMusicPlaying);
-  if (result && result.ok) sodaMusicPlaying = result.playing;
-  if (result && result.ok && mainWindow && !mainWindow.isDestroyed() && currentMode === 'expanded') {
-    if (!mainWindow.isVisible()) mainWindow.show();
-    mainWindow.focus();
+ipcMain.handle('launcher:icon', async (event, appPath) => {
+  const target = typeof appPath === 'string' ? appPath.trim() : '';
+  if (!target) return null;
+  return readExecutableIcon(target);
+});
+
+ipcMain.handle('launcher:open', async (event, appPath) => {
+  const target = typeof appPath === 'string' ? appPath.trim() : '';
+  if (!target) return { ok: false, error: 'invalid_path' };
+  try {
+    await fs.promises.access(target);
+  } catch (error) {
+    return { ok: false, error: 'missing' };
   }
-  return result;
+  if (await activateRunningApp(target)) return { ok: true, activated: true };
+  const failure = await shell.openPath(target);
+  if (failure) return { ok: false, error: 'launch_failed' };
+  return { ok: true, activated: false };
 });
 
 // ============ 百炼实时语音转写 ============

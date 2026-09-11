@@ -99,40 +99,6 @@
         <div class="panels" id="panels">
           <section id="tab-home" class="tab-panel" role="tabpanel" aria-labelledby="tab-button-home" aria-hidden="true" inert>
             <div class="home-bento" id="home-bento" aria-label="可长按拖动调整的首页布局">
-              <!-- 本地汽水音乐控制 -->
-              <section class="tile home-music" id="home-music" data-home-module="music" data-widget-size="medium" aria-label="汽水音乐播放器">
-                <canvas class="module-effect-canvas" id="music-color-bends" aria-hidden="true"></canvas>
-                <div class="music-copy">
-                  <strong id="music-title">汽水音乐</strong>
-                </div>
-                <div class="music-controls" role="group" aria-label="汽水音乐控制">
-                  <button type="button" data-music-action="previous" aria-label="上一首"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 9 12l9 6V6Z" /><path d="M6 6v12" /></svg></button>
-                  <button class="music-play" id="music-play-toggle" type="button" data-music-action="play" aria-label="播放"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z" /></svg></button>
-                  <button type="button" data-music-action="next" aria-label="下一首"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 9 6-9 6V6Z" /><path d="M18 6v12" /></svg></button>
-                </div>
-              </section>
-
-              <section class="tile home-pomodoro" id="home-pomodoro" data-home-module="pomodoro" data-widget-size="mini" aria-label="番茄钟">
-                <button class="pomodoro-toggle" id="pomodoro-toggle" type="button" aria-label="开始番茄钟">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7 8 5-8 5z" /></svg>
-                </button>
-                <div class="pomodoro-readout">
-                  <div class="pomodoro-status" aria-label="预计结束时间">
-                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM9.7 19a2.5 2.5 0 0 0 4.6 0H9.7Z" /></svg>
-                    <time id="pomodoro-end-time">--:--</time>
-                  </div>
-                  <div class="pomodoro-dial" id="pomodoro-dial" aria-label="设置番茄钟时长">
-                    <input id="pomodoro-minutes" value="05" inputmode="numeric" maxlength="2" aria-label="分钟" />
-                    <span>:</span>
-                    <input id="pomodoro-seconds" value="00" inputmode="numeric" maxlength="2" aria-label="秒" />
-                  </div>
-                  <span class="pomodoro-caption">Timer</span>
-                </div>
-                <button class="pomodoro-reset" id="pomodoro-reset" type="button" aria-label="重置番茄钟" hidden>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
-                </button>
-              </section>
-
               <!-- 快速录音与实时转写 -->
               <section class="tile home-recorder" id="home-recorder" data-home-module="recorder" data-widget-size="medium">
                 <div class="recorder-head">
@@ -152,6 +118,18 @@
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" /></svg>
                   </button>
                 </div>
+              </section>
+
+              <!-- 快速启动：自定义常用软件 -->
+              <section class="tile home-launcher" data-home-module="launcher" data-widget-size="small" aria-label="快速启动">
+                <div class="tile-head">
+                  <span class="tile-label">快速启动</span>
+                  <button class="launcher-add" id="launcher-add" type="button" aria-label="添加软件">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13" /></svg>
+                  </button>
+                </div>
+                <div class="launcher-grid" id="launcher-grid"></div>
+                <p class="launcher-hint" id="launcher-hint">点右上角 + 添加常用软件</p>
               </section>
 
               <!-- 当前打开的窗口 -->
@@ -437,8 +415,7 @@
                     <small id="settings-home-module-status">隐藏后自动填充 · 至少保留一个</small>
                   </div>
                   <div class="settings-home-module-grid" id="settings-home-module-list">
-                    <label><span><b>音乐</b><small>播放状态与控制</small></span><input type="checkbox" data-settings-home-module="music" aria-label="显示音乐" /><i aria-hidden="true"></i></label>
-                    <label><span><b>番茄钟</b><small>专注计时</small></span><input type="checkbox" data-settings-home-module="pomodoro" aria-label="显示番茄钟" /><i aria-hidden="true"></i></label>
+                    <label><span><b>快速启动</b><small>常用软件一键打开</small></span><input type="checkbox" data-settings-home-module="launcher" aria-label="显示快速启动" /><i aria-hidden="true"></i></label>
                     <label><span><b>快速录音</b><small data-home-module-setting-note="recorder">录音与转写</small></span><input type="checkbox" data-settings-home-module="recorder" aria-label="显示快速录音" /><i aria-hidden="true"></i></label>
                     <label><span><b>当前窗口</b><small>窗口快速切换</small></span><input type="checkbox" data-settings-home-module="windows" aria-label="显示当前窗口" /><i aria-hidden="true"></i></label>
                     <label><span><b>镜子</b><small>相机与封面</small></span><input type="checkbox" data-settings-home-module="mirror" aria-label="显示镜子" /><i aria-hidden="true"></i></label>

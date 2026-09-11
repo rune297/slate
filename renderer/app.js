@@ -1310,184 +1310,21 @@ document.querySelectorAll('.todo-bulk-delete[data-bulk-priority]').forEach((butt
   });
 });
 
-// ============ 首页 · 时钟·日期 ============
-const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-const clockDateEl = document.getElementById('clock-date');
-const clockHEl = document.getElementById('clock-h');
-const clockMEl = document.getElementById('clock-m');
-const clockSsEl = document.getElementById('clock-ss');
+// ============ 首页 · 待办默认截止时间跨日刷新 ============
+// 新增待办行的默认截止时间跟着"今天"走，23:30 之后创建应落到第二天。
+// 这根心跳必须独立于任何首页组件：它曾挂在已移除的时钟组件上，
+// 组件消失后 tickClock 在首行就 return，跨日刷新被一起带走了。
 let todoDefaultRefreshKey = '';
 
-function pad2(n) {
-  return n < 10 ? '0' + n : String(n);
-}
-
-function tickClock() {
-  if (!clockHEl || !clockMEl) return;
-  const now = new Date();
-  const h = pad2(now.getHours());
-  const m = pad2(now.getMinutes());
-  if (clockHEl.textContent !== h) clockHEl.textContent = h;
-  if (clockMEl.textContent !== m) clockMEl.textContent = m;
-  if (clockSsEl) clockSsEl.textContent = pad2(now.getSeconds());
-  if (clockDateEl) {
-    const dateStr = `${WEEKDAYS[now.getDay()]} · ${now.getMonth() + 1}/${now.getDate()}`;
-    if (clockDateEl.textContent !== dateStr) clockDateEl.textContent = dateStr;
-  }
+function refreshTodoDefaultDeadlineKey(now = new Date()) {
   const refreshKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours() > 23 || (now.getHours() === 23 && now.getMinutes() >= 30)}`;
-  if (refreshKey !== todoDefaultRefreshKey) {
-    todoDefaultRefreshKey = refreshKey;
-    refreshDefaultTodoDeadlines(now);
-  }
+  if (refreshKey === todoDefaultRefreshKey) return;
+  todoDefaultRefreshKey = refreshKey;
+  refreshDefaultTodoDeadlines(now);
 }
 
-tickClock();
-setInterval(tickClock, 1000);
-
-// ============ 首页 · 番茄钟 ============
-const pomodoroToggle = document.getElementById('pomodoro-toggle');
-const pomodoroReset = document.getElementById('pomodoro-reset');
-const homePomodoro = document.getElementById('home-pomodoro');
-const pomodoroEndTime = document.getElementById('pomodoro-end-time');
-const pomodoroInputs = [
-  document.getElementById('pomodoro-minutes'),
-  document.getElementById('pomodoro-seconds'),
-];
-const POMODORO_DURATION_KEY = 'dynamic-panel-pomodoro-duration-v3';
-let savedPomodoroParts = (() => {
-  try {
-    const value = JSON.parse(localStorage.getItem(POMODORO_DURATION_KEY) || 'null');
-    if (Array.isArray(value) && value.length === 3) {
-      return [
-        Math.max(0, Math.min(60, (Number(value[0]) || 0) * 60 + (Number(value[1]) || 0))),
-        Math.max(0, Math.min(60, Number(value[2]) || 0)),
-      ];
-    }
-    if (Array.isArray(value) && value.length === 2) {
-      return value.map((part) => Math.max(0, Math.min(60, Number(part) || 0)));
-    }
-  } catch (error) {}
-  return [5, 0];
-})();
-let pomodoroConfiguredSeconds = savedPomodoroParts[0] * 60 + savedPomodoroParts[1];
-let pomodoroRemaining = pomodoroConfiguredSeconds;
-let pomodoroRunning = false;
-let pomodoroStarted = false;
-let pomodoroTimer = null;
-
-function secondsToParts(seconds) {
-  const safe = Math.max(0, Math.floor(seconds));
-  return [Math.min(60, Math.floor(safe / 60)), safe % 60];
-}
-
-function setPomodoroInputs(parts) {
-  pomodoroInputs.forEach((input, index) => {
-    if (!input) return;
-    input.value = String(parts[index]).padStart(2, '0');
-    input.readOnly = pomodoroRunning;
-  });
-}
-
-function formatPomodoroEndTime(seconds) {
-  const target = new Date(Date.now() + Math.max(0, seconds) * 1000);
-  return `${pad2(target.getHours())}:${pad2(target.getMinutes())}`;
-}
-
-function renderPomodoro() {
-  setPomodoroInputs(pomodoroStarted ? secondsToParts(pomodoroRemaining) : savedPomodoroParts);
-  if (pomodoroEndTime) {
-    pomodoroEndTime.textContent = formatPomodoroEndTime(pomodoroStarted ? pomodoroRemaining : pomodoroConfiguredSeconds);
-  }
-  const remainingRatio = pomodoroStarted
-    ? pomodoroRemaining / Math.max(1, pomodoroConfiguredSeconds)
-    : 1;
-  homePomodoro?.style.setProperty('--pomodoro-progress', String(Math.max(0, Math.min(1, remainingRatio))));
-  if (pomodoroToggle) {
-    pomodoroToggle.innerHTML = pomodoroRunning
-      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h3v10H8zM14 7h3v10h-3z" /></svg>'
-      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7 8 5-8 5z" /></svg>';
-    pomodoroToggle.setAttribute('aria-label', pomodoroRunning ? '暂停番茄钟' : '开始番茄钟');
-  }
-  if (pomodoroReset) pomodoroReset.hidden = !pomodoroStarted;
-  homePomodoro?.setAttribute('data-state', pomodoroRunning ? 'running' : (pomodoroStarted ? 'paused' : 'idle'));
-}
-
-function commitPomodoroInputs() {
-  if (pomodoroRunning) return;
-  savedPomodoroParts = pomodoroInputs.map((input) => Math.max(0, Math.min(60, Number.parseInt(input?.value || '0', 10) || 0)));
-  pomodoroConfiguredSeconds = savedPomodoroParts[0] * 60 + savedPomodoroParts[1];
-  pomodoroRemaining = pomodoroConfiguredSeconds;
-  pomodoroStarted = false;
-  localStorage.setItem(POMODORO_DURATION_KEY, JSON.stringify(savedPomodoroParts));
-  renderPomodoro();
-}
-
-pomodoroInputs.forEach((input) => {
-  if (!input) return;
-  input.addEventListener('focus', () => input.select());
-  input.addEventListener('input', () => {
-    input.value = input.value.replace(/\D/g, '').slice(0, 2);
-  });
-  input.addEventListener('blur', commitPomodoroInputs);
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commitPomodoroInputs();
-      input.blur();
-    }
-  });
-  input.addEventListener('wheel', (event) => {
-    if (pomodoroRunning) return;
-    event.preventDefault();
-    const current = Number.parseInt(input.value || '0', 10) || 0;
-    input.value = String(Math.max(0, Math.min(60, current + (event.deltaY < 0 ? 1 : -1)))).padStart(2, '0');
-    commitPomodoroInputs();
-    input.focus({ preventScroll: true });
-    input.select();
-  }, { passive: false });
-});
-
-pomodoroToggle?.addEventListener('click', () => {
-  if (!pomodoroStarted) {
-    commitPomodoroInputs();
-    if (pomodoroConfiguredSeconds <= 0) {
-      showStatusToast('请先设置倒计时时间');
-      return;
-    }
-    pomodoroStarted = true;
-    pomodoroRemaining = pomodoroConfiguredSeconds;
-  }
-  pomodoroRunning = !pomodoroRunning;
-  clearInterval(pomodoroTimer);
-  pomodoroTimer = null;
-  if (pomodoroRunning) {
-    pomodoroTimer = setInterval(() => {
-      pomodoroRemaining -= 1;
-      if (pomodoroRemaining <= 0) {
-        const completedMinutes = Math.max(1, Math.round(pomodoroConfiguredSeconds / 60));
-        pomodoroRemaining = pomodoroConfiguredSeconds;
-        pomodoroRunning = false;
-        pomodoroStarted = false;
-        clearInterval(pomodoroTimer);
-        pomodoroTimer = null;
-        showStatusToast(`${completedMinutes} 分钟专注完成`);
-        window.slateAPI?.notifyPomodoro?.(completedMinutes).catch(() => {});
-      }
-      renderPomodoro();
-    }, 1000);
-  }
-  renderPomodoro();
-});
-
-pomodoroReset?.addEventListener('click', () => {
-  clearInterval(pomodoroTimer);
-  pomodoroTimer = null;
-  pomodoroRunning = false;
-  pomodoroStarted = false;
-  pomodoroRemaining = pomodoroConfiguredSeconds;
-  renderPomodoro();
-});
-renderPomodoro();
+refreshTodoDefaultDeadlineKey();
+setInterval(refreshTodoDefaultDeadlineKey, 1000);
 
 // ============ 首页 · Markdown 速记 ============
 // textarea 中的原始 Markdown 始终是唯一数据源；预览只用 DOM API + textContent 构建，
@@ -2439,18 +2276,17 @@ if (notePreview) {
 const HOME_ORDER_KEY = 'slate-home-order-v3';
 const HOME_SIZES_KEY = 'slate-home-widget-sizes-v2';
 const HOME_HIDDEN_MODULES_KEY = 'slate-home-hidden-modules-v1';
-const HOME_MODULE_REGISTRY = ['music', 'pomodoro', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+const HOME_MODULE_REGISTRY = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
 const unavailableHomeModules = window.SlatePlatform.capabilities(window.slateAPI?.platform || 'darwin').unavailableHomeModules;
 const effectiveHomeHidden = (hidden) => window.SlatePlatform.effectiveHiddenModules(hidden, HOME_MODULE_REGISTRY, unavailableHomeModules);
-const HOME_ORDER_DEFAULTS = ['music', 'pomodoro', 'windows', 'recorder', 'mirror', 'note', 'commands'];
+const HOME_ORDER_DEFAULTS = ['windows', 'recorder', 'launcher', 'mirror', 'note', 'commands'];
 const HOME_SIZE_DEFAULTS = {
-  music: 'medium',
   windows: 'large',
   recorder: 'small',
+  launcher: 'small',
   mirror: 'medium',
   note: 'medium',
   commands: 'mini',
-  pomodoro: 'mini',
 };
 const HOME_SIZE_LABELS = { mini: '迷你', small: '小', medium: '中', large: '大' };
 const homeBento = document.getElementById('home-bento');
@@ -2461,26 +2297,16 @@ const homeTiles = homeBento
 function loadHomeOrder() {
   try {
     const rawSaved = JSON.parse(localStorage.getItem(HOME_ORDER_KEY) || 'null');
-    const saved = Array.isArray(rawSaved)
-      ? rawSaved.map((id) => id === 'character' ? 'music' : id)
-      : rawSaved;
-    if (
-      Array.isArray(saved)
-      && saved.length === HOME_ORDER_DEFAULTS.length
-      && new Set(saved).size === HOME_ORDER_DEFAULTS.length
-      && saved.every((id) => HOME_ORDER_DEFAULTS.includes(id))
-    ) return saved;
-
-    // 从旧固定槽位布局平滑迁移；原时钟 / 人物位置由音乐组件接管。
-    const legacy = JSON.parse(localStorage.getItem('slate-home-layout-v2') || 'null');
-    const legacySlots = ['tall-left', 'small-top', 'medium-top', 'square-top', 'tall-right', 'wide-bottom'];
-    if (legacy && typeof legacy === 'object') {
-      const migrated = Object.entries(legacy)
-        .sort((a, b) => legacySlots.indexOf(a[1]) - legacySlots.indexOf(b[1]))
-        .map(([id]) => id === 'clock' || id === 'character' ? 'music' : id)
-        .filter((id) => HOME_ORDER_DEFAULTS.includes(id));
-      if (migrated.length === HOME_ORDER_DEFAULTS.length && new Set(migrated).size === migrated.length) {
-        return migrated;
+    if (Array.isArray(rawSaved)) {
+      // 版本升级会增删首页模块：保留仍然存在的模块及其相对顺序，
+      // 新增模块按默认顺序补到末尾，已下线模块自动丢弃。
+      const kept = [];
+      rawSaved.forEach((id) => {
+        if (!HOME_ORDER_DEFAULTS.includes(id) || kept.includes(id)) return;
+        kept.push(id);
+      });
+      if (kept.length) {
+        return [...kept, ...HOME_ORDER_DEFAULTS.filter((id) => !kept.includes(id))];
       }
     }
   } catch (error) {

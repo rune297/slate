@@ -31,7 +31,6 @@
   --p2: var(--accent-green);
   --p3: var(--accent-blue);
 
-  --home-clock-surface: var(--surface-1);
   --home-note-surface: var(--surface-1);
   --home-mirror-surface: var(--surface-1);
   --home-clip-surface: var(--surface-1);
@@ -583,70 +582,12 @@ body {
   height: 100%;
 }
 
-.home-clock    { grid-area: clock; }
 .home-windows  { grid-area: windows; }
 .home-recorder { grid-area: recorder; }
 .home-commands { grid-area: commands; }
 .home-note     { grid-area: note; }
 .home-mirror   { grid-area: mirror; }
 .home-clipfav  { grid-area: clipfav; }
-
-/* 时钟·日期 */
-.home-clock {
-  padding: var(--s-2) var(--s-4);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: var(--s-1);
-  min-width: 0;
-  background: var(--home-clock-surface);
-}
-
-/* 日期只做中性层级，不额外引入装饰色。 */
-.clock-date {
-  display: inline-flex;
-  align-items: center;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: var(--r-pill);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.4px;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.clock-time {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.clock-hm {
-  font-size: 32px;
-  font-weight: 500;
-  letter-spacing: 0;
-  line-height: 1;
-  color: var(--text-1);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 参考界面的绿色只用于少量高亮信息。 */
-.clock-m {
-  color: var(--accent-green);
-}
-
-.clock-ss {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--text-3);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
 
 /* 速记 —— 占 1fr，填满 */
 .home-note {
@@ -2760,7 +2701,6 @@ body {
 .home-bento > [data-widget-size='medium'] { grid-column: span 4; grid-row: span 2; }
 .home-bento > [data-widget-size='large']  { grid-column: span 4; grid-row: span 4; }
 
-.home-character,
 .home-windows,
 .home-recorder,
 .home-commands,
@@ -2794,44 +2734,6 @@ body {
 .widget-size-control:hover { color: var(--text-1); background: rgba(50,50,56,.82); }
 .widget-size-control svg { width: 13px; height: 13px; }
 
-.home-character {
-  z-index: 8;
-  overflow: visible;
-  background: transparent;
-  box-shadow: none;
-  pointer-events: none;
-}
-.home-character::after { display: none; }
-.home-character img {
-  position: absolute;
-  right: -18%;
-  bottom: -18px;
-  z-index: 2;
-  width: 142%;
-  max-width: none;
-  filter: drop-shadow(0 18px 24px rgba(0,0,0,.62));
-  transform-origin: 54% 88%;
-}
-.home-character .widget-size-control { pointer-events: auto; }
-.character-glow {
-  position: absolute;
-  right: 4%;
-  bottom: 0;
-  width: 84%;
-  height: 58%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(82,139,255,.22), transparent 68%);
-  filter: blur(15px);
-}
-.character-wave {
-  position: absolute;
-  top: 16%;
-  right: 5%;
-  z-index: 3;
-  color: #9ac2ff;
-  font-size: 16px;
-  opacity: 0;
-}
 .home-bento.layout-dragging { cursor: grabbing; }
 .home-bento.layout-dragging > .tile:not(.is-dragging) { opacity: .72; }
 .home-bento > .tile.is-dragging {
@@ -3201,86 +3103,6 @@ body {
   }
 }
 
-/* ============ 本地音乐组件 · macOS Now Playing ============ */
-.home-music {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 10px 13px;
-  align-items: center;
-  padding: 15px;
-  background:
-    radial-gradient(90% 120% at 8% 100%, rgba(99, 255, 171, .105), transparent 58%),
-    radial-gradient(100% 100% at 100% 0%, rgba(132, 160, 255, .085), transparent 62%),
-    linear-gradient(150deg, rgba(30,31,34,.97), rgba(13,14,16,.97));
-  cursor: pointer;
-}
-.music-artwork-shell { grid-row: 1 / 3; position: relative; width: 58px; height: 58px; }
-.music-artwork {
-  position: relative;
-  z-index: 2;
-  width: 58px;
-  height: 58px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 17px;
-  background: rgba(8,9,10,.9);
-  color: rgba(255,255,255,.88);
-  font-size: 21px;
-  font-weight: 680;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.1), inset 0 1px 0 rgba(255,255,255,.12), 0 14px 28px rgba(0,0,0,.34);
-}
-.music-artwork img { width: 78%; height: 78%; object-fit: contain; border-radius: 13px; }
-.music-pulse { position: absolute; inset: -8px; display: flex; align-items: flex-end; justify-content: center; gap: 3px; opacity: 0; filter: blur(.1px); transition: opacity 220ms var(--ease); }
-.music-pulse i { width: 3px; height: 12px; border-radius: 99px; background: linear-gradient(#baffd1, #55e68a); transform-origin: center bottom; animation: music-pulse 760ms ease-in-out infinite alternate; }
-.music-pulse i:nth-child(2) { height: 19px; animation-delay: -420ms; }
-.music-pulse i:nth-child(3) { height: 15px; animation-delay: -180ms; }
-.music-pulse i:nth-child(4) { height: 9px; animation-delay: -590ms; }
-.music-playing .music-pulse { opacity: .58; }
-@keyframes music-pulse { from { transform: scaleY(.35); opacity:.35; } to { transform: scaleY(1); opacity:.92; } }
-.music-copy { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
-.music-copy strong,
-.music-copy > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.music-kicker { color: rgba(177,255,207,.62); font: 7px/1.2 var(--font-mono); letter-spacing: 1.15px; }
-.music-copy strong { color: var(--text-1); font-size: 14px; font-weight: 640; letter-spacing: -.2px; }
-.music-copy > span:last-child { color: var(--text-3); font-size: 9px; }
-.music-controls { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.music-controls button {
-  width: 25px;
-  height: 25px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(255,255,255,.055);
-  color: rgba(255,255,255,.8);
-  cursor: pointer;
-  transition: transform 160ms var(--ease-spring), background 140ms var(--ease);
-}
-.music-controls button:hover { transform: scale(1.08); background: rgba(255,255,255,.12); }
-.music-controls .music-play { width: 31px; height: 31px; background: rgba(246,247,248,.94); color: #121315; box-shadow: 0 7px 18px rgba(0,0,0,.28); }
-.music-controls svg { width: 15px; height: 15px; fill: currentColor; }
-.home-music[data-widget-size='small'] {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 16px 12px;
-  gap: 11px;
-  text-align: center;
-}
-.home-music[data-widget-size='small'] .music-artwork-shell,
-.home-music[data-widget-size='small'] .music-artwork { width: 68px; height: 68px; border-radius: 19px; }
-.home-music[data-widget-size='small'] .music-artwork-shell { width: 68px; height: 68px; }
-.home-music[data-widget-size='small'] .music-kicker,
-.home-music[data-widget-size='small'] #music-status { display: none; }
-.home-music[data-widget-size='small'] .music-copy { align-items: center; }
-.home-music[data-widget-size='small'] .music-copy strong { font-size: 13px; }
-.home-music[data-widget-size='small'] .music-controls { justify-content: center; gap: 3px; }
-.home-music[data-widget-size='small'] .music-controls button:not(.music-play) { display: none; }
-
 /* ============ 面板内截止时间选择器与单行待办 ============ */
 .todo-item { display: grid; grid-template-columns: 25px minmax(0, 1fr) 22px; align-items: center; gap: 7px; }
 .todo-copy {
@@ -3370,12 +3192,6 @@ body {
 .home-recorder .recorder-controls { position: absolute; left: 15px; right: auto; bottom: 14px; justify-content: flex-start; }
 .recording-strands { display: none !important; }
 
-/* 半尺寸组件与番茄钟。 */
-.home-pomodoro { padding: 10px; display: grid; grid-template-columns: minmax(0, 1fr) 25px; grid-template-rows: auto 1fr; gap: 2px 6px; align-items: center; }
-.pomodoro-label { color: var(--text-4); font-size: 8px; }
-.home-pomodoro strong { color: var(--text-1); font: 600 15px var(--font-mono); letter-spacing: -.5px; }
-.home-pomodoro button { grid-column: 2; grid-row: 1 / 3; width: 25px; height: 25px; border: 0; border-radius: 9px; background: rgba(255,255,255,.09); color: var(--text-1); cursor: pointer; }
-
 /* Tab 横跨面板，并在物理顶部条位置留出安全空槽；功能全开时自然分成左右两组。 */
 .topbar { position: relative; }
 .topbar {
@@ -3416,11 +3232,6 @@ body {
 .home-mirror[data-widget-size='mini']::before { content: '镜子'; color: var(--text-2); font-size: 10px; }
 .home-recorder[data-widget-size='mini'] .recorder-head { overflow: hidden; white-space: nowrap; }
 .home-recorder[data-widget-size='mini'] .recorder-controls { left: 10px; bottom: 8px; transform: scale(.78); transform-origin: left bottom; }
-.home-music[data-widget-size='mini'] { display: grid; place-items: center; padding: 8px; }
-.home-music[data-widget-size='mini'] .music-copy,
-.home-music[data-widget-size='mini'] .music-controls button:not(.music-play) { display: none; }
-.home-music[data-widget-size='mini'] .music-artwork-shell,
-.home-music[data-widget-size='mini'] .music-artwork { width: 46px; height: 46px; border-radius: 13px; }
 
 /* ============ 时间电量与统一多选 ============ */
 .todo-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -3752,53 +3563,6 @@ body {
   bottom: 7px;
 }
 
-/* 汽水音乐：同一视觉语言的四套裁切资产，按钮始终可见。 */
-.home-music {
-  isolation: isolate;
-  background-image: linear-gradient(rgba(6,9,9,.22), rgba(6,9,9,.22)), url('assets/generated/music-bg-medium.png');
-  background-size: cover;
-  background-position: center;
-}
-.home-music[data-widget-size='mini'] { background-image: linear-gradient(rgba(6,9,9,.16), rgba(6,9,9,.16)), url('assets/generated/music-bg-mini.png'); }
-.home-music[data-widget-size='small'] { background-image: linear-gradient(rgba(6,9,9,.2), rgba(6,9,9,.2)), url('assets/generated/music-bg-small.png'); }
-.home-music[data-widget-size='large'] { background-image: linear-gradient(rgba(6,9,9,.24), rgba(6,9,9,.24)), url('assets/generated/music-bg-large.png'); }
-.home-music::after { content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(90deg,rgba(0,0,0,.3),transparent 55%); pointer-events:none; }
-.home-music .music-controls button,
-.home-music[data-widget-size='small'] .music-controls button:not(.music-play),
-.home-music[data-widget-size='mini'] .music-controls button:not(.music-play) { display: grid; place-items: center; }
-.home-music[data-widget-size='mini'] { grid-template-columns: 38px 1fr; grid-template-rows: 1fr; gap: 8px; place-items: center; }
-.home-music[data-widget-size='mini'] .music-artwork-shell,
-.home-music[data-widget-size='mini'] .music-artwork { width: 36px; height: 36px; border-radius: 11px; }
-.home-music[data-widget-size='mini'] .music-controls { display:flex; gap:2px; }
-.home-music[data-widget-size='mini'] .music-controls button { width:22px; height:22px; }
-.home-music[data-widget-size='mini'] .music-controls .music-play { width:28px; height:28px; }
-
-/* 番茄钟有可验证的时长设置、进度与四档背景。 */
-.home-pomodoro {
-  position: relative;
-  isolation: isolate;
-  padding: 12px;
-  display: grid;
-  grid-template-columns: minmax(0,1fr) auto;
-  grid-template-rows: auto 1fr auto;
-  gap: 4px 8px;
-  overflow: hidden;
-  background-image: linear-gradient(rgba(9,8,11,.22),rgba(9,8,11,.22)), url('assets/generated/pomodoro-bg-medium.png');
-  background-size: cover;
-  background-position: center;
-}
-.home-pomodoro[data-widget-size='mini'] { background-image: linear-gradient(rgba(9,8,11,.16),rgba(9,8,11,.16)), url('assets/generated/pomodoro-bg-mini.png'); }
-.home-pomodoro[data-widget-size='small'] { background-image: linear-gradient(rgba(9,8,11,.2),rgba(9,8,11,.2)), url('assets/generated/pomodoro-bg-small.png'); }
-.home-pomodoro[data-widget-size='large'] { background-image: linear-gradient(rgba(9,8,11,.24),rgba(9,8,11,.24)), url('assets/generated/pomodoro-bg-large.png'); }
-.home-pomodoro .pomodoro-label { grid-column:1; grid-row:1; color:rgba(255,255,255,.58); }
-.home-pomodoro strong { grid-column:1; grid-row:2; align-self:center; font-size:clamp(15px,2.1vw,28px); }
-.home-pomodoro .pomodoro-toggle { grid-column:2; grid-row:1 / 4; align-self:center; width:34px; height:34px; border-radius:12px; backdrop-filter:blur(12px); }
-.pomodoro-settings { grid-column:1; grid-row:3; display:flex; align-items:center; gap:5px; color:rgba(255,255,255,.62); font:8px var(--font); }
-.pomodoro-settings button { position:static; width:18px; height:18px; border-radius:7px; background:rgba(255,255,255,.075); color:var(--text-2); }
-.pomodoro-progress { position:absolute; left:0; right:0; bottom:0; height:2px; transform-origin:left; transform:scaleX(var(--progress,0)); background:linear-gradient(90deg,#ff796e,#ffd082); box-shadow:0 0 10px rgba(255,121,110,.6); }
-.home-pomodoro[data-widget-size='mini'] .pomodoro-settings span { display:none; }
-.home-pomodoro[data-widget-size='mini'] .pomodoro-settings { gap:2px; }
-
 /* 最小录音组件仍给转写摘要留出一行。 */
 .home-recorder[data-widget-size='mini'] .home-transcript {
   display: -webkit-box !important;
@@ -3853,96 +3617,6 @@ body {
 .shortcut-recorder kbd { justify-self: end; padding: 5px 8px; border-radius: 9px; background: rgba(255,255,255,.08); color: #cbd9ff; font: 10px var(--font-mono); }
 .shortcut-recorder small { color: var(--text-4); font-size: 8px; line-height: 1.4; }
 .shortcut-recorder button { border: 0; background: transparent; color: var(--text-3); font: 9px var(--font); cursor: pointer; }
-
-/* 汽水音乐在四档尺寸中保持完全相同的信息顺序：Logo、名称、三枚控制键。 */
-.home-music,
-.home-music[data-widget-size='mini'],
-.home-music[data-widget-size='small'],
-.home-music[data-widget-size='medium'],
-.home-music[data-widget-size='large'] {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(5px, 1.25vh, 10px);
-  padding: 10px 12px;
-  text-align: center;
-}
-.home-music::after { background: radial-gradient(circle at 50% 42%, rgba(78,235,156,.09), transparent 56%), linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.25)); }
-.home-music .music-artwork-shell,
-.home-music .music-artwork,
-.home-music[data-widget-size='mini'] .music-artwork-shell,
-.home-music[data-widget-size='mini'] .music-artwork,
-.home-music[data-widget-size='small'] .music-artwork-shell,
-.home-music[data-widget-size='small'] .music-artwork {
-  width: clamp(36px, 5.5vh, 56px);
-  height: clamp(36px, 5.5vh, 56px);
-  flex: 0 0 auto;
-  border-radius: 16px;
-}
-.home-music .music-copy,
-.home-music[data-widget-size='mini'] .music-copy { display: flex; align-items: center; min-height: 13px; }
-.home-music .music-copy strong { font-size: clamp(10px, 1.45vh, 13px); }
-.home-music .music-controls,
-.home-music[data-widget-size='mini'] .music-controls { display: flex; justify-content: center; gap: 5px; }
-.home-music .music-controls button,
-.home-music[data-widget-size='mini'] .music-controls button,
-.home-music[data-widget-size='mini'] .music-controls .music-play {
-  width: clamp(23px, 3.8vh, 30px);
-  height: clamp(23px, 3.8vh, 30px);
-  display: grid;
-}
-.home-music .music-controls .music-play { width: clamp(28px, 4.5vh, 36px); height: clamp(28px, 4.5vh, 36px); }
-
-/* 番茄钟保持三段时间与控制键的统一居中排版，不随组件尺寸改版。 */
-.home-pomodoro,
-.home-pomodoro[data-widget-size='mini'],
-.home-pomodoro[data-widget-size='small'],
-.home-pomodoro[data-widget-size='medium'],
-.home-pomodoro[data-widget-size='large'] {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(8px, 1.7vh, 14px);
-  padding: 10px 12px;
-}
-.pomodoro-dial { display: flex; align-items: center; justify-content: center; gap: 2px; }
-.pomodoro-dial span { color: rgba(255,255,255,.56); font: 600 clamp(13px,2.2vh,20px)/1 var(--font-mono); }
-.pomodoro-dial input {
-  width: 29px;
-  padding: 2px 0;
-  border: 0;
-  border-radius: 8px;
-  outline: none;
-  background: transparent;
-  color: var(--text-1);
-  font: 620 clamp(14px,2.4vh,22px)/1 var(--font-mono);
-  text-align: center;
-  appearance: textfield;
-  cursor: ns-resize;
-}
-.pomodoro-dial input:focus { background: rgba(255,255,255,.1); box-shadow: 0 0 0 1px rgba(255,255,255,.13); }
-.pomodoro-dial input[readonly] { cursor: default; }
-.pomodoro-controls { display: flex; align-items: center; justify-content: center; gap: 7px; }
-.home-pomodoro .pomodoro-controls button {
-  position: static;
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(246,247,248,.92);
-  color: #15161a;
-  cursor: pointer;
-  backdrop-filter: blur(12px);
-}
-.home-pomodoro .pomodoro-controls button[hidden] { display: none; }
-.home-pomodoro .pomodoro-controls .pomodoro-reset { background: rgba(255,255,255,.08); color: var(--text-2); }
-.pomodoro-controls svg { width: 15px; height: 15px; fill: currentColor; }
-.pomodoro-controls .pomodoro-reset svg { fill: none; }
 
 /* 最小组件仍是“摘要态”，而不是把主体隐藏后留下空壳。 */
 .home-windows[data-widget-size='mini'] .window-list,
@@ -4062,29 +3736,6 @@ body {
 .todo-date-popover .todo-time-row > span { display: none; }
 .todo-date-popover .todo-time-row select { width: 58px; height: 29px; border-radius: 9px; font-size: 10px; }
 .todo-date-popover #todo-editor-error { min-height: 0; margin: 5px 0 0; font-size: 8px; }
-
-/* ============ Vue Bits inspired motion + radius audit ============ */
-/* 两个首页背景由本地 WebGL 绘制，切换组件尺寸时无需替换图片。 */
-.home-music,
-.home-music[data-widget-size='mini'],
-.home-music[data-widget-size='small'],
-.home-music[data-widget-size='medium'],
-.home-music[data-widget-size='large'],
-.home-pomodoro,
-.home-pomodoro[data-widget-size='mini'],
-.home-pomodoro[data-widget-size='small'],
-.home-pomodoro[data-widget-size='medium'],
-.home-pomodoro[data-widget-size='large'] {
-  background-image: none;
-  background-color: #08090a;
-}
-.home-music.effect-fallback {
-  background: radial-gradient(circle at 22% 70%, rgba(41,223,157,.28), transparent 48%),
-    radial-gradient(circle at 78% 24%, rgba(128,75,255,.25), transparent 48%), #08090a;
-}
-.home-pomodoro.effect-fallback {
-  background: linear-gradient(145deg, rgba(44,61,50,.42), rgba(236,72,153,.12)), #08090a;
-}
 .module-effect-canvas {
   position: absolute;
   inset: 0;
@@ -4093,21 +3744,6 @@ body {
   height: 100%;
   border-radius: inherit;
   pointer-events: none;
-}
-.home-music > :not(.module-effect-canvas),
-.home-pomodoro > :not(.module-effect-canvas) {
-  position: relative;
-  z-index: 2;
-}
-.home-music::after {
-  z-index: 1;
-  background: radial-gradient(circle at 50% 42%, rgba(0,0,0,.02), transparent 50%),
-    linear-gradient(180deg, rgba(0,0,0,.03), rgba(0,0,0,.26));
-}
-.home-pomodoro::after {
-  z-index: 1;
-  background: radial-gradient(circle at 50% 50%, rgba(236,72,153,.06), transparent 52%),
-    linear-gradient(180deg, rgba(0,0,0,.03), rgba(0,0,0,.23));
 }
 
 /* 非首页纵向列表采用 Line Sidebar 的邻近度反馈。 */
@@ -4209,583 +3845,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .line-sidebar-list [data-line-sidebar-item] { transform: none; }
 }
-
-/* 番茄钟：克制的黑底计时器，外沿描边随剩余时间递减。 */
-.home-pomodoro,
-.home-pomodoro[data-widget-size='mini'],
-.home-pomodoro[data-widget-size='small'],
-.home-pomodoro[data-widget-size='medium'],
-.home-pomodoro[data-widget-size='large'] {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  grid-template-columns: minmax(34px, .72fr) minmax(76px, 1.65fr) minmax(34px, .72fr);
-  grid-template-rows: 1fr;
-  align-items: center;
-  justify-items: center;
-  gap: clamp(4px, 1vw, 12px);
-  padding: clamp(11px, 1.8vh, 18px);
-  overflow: hidden;
-  background: #050505;
-}
-.home-pomodoro::after { display: none; }
-.home-pomodoro .pomodoro-progress {
-  position: absolute;
-  inset: 4px;
-  z-index: 1;
-  width: calc(100% - 8px);
-  height: calc(100% - 8px);
-  overflow: visible;
-  pointer-events: none;
-  transform: none;
-  background: none;
-  box-shadow: none;
-}
-.pomodoro-progress rect {
-  fill: none;
-  vector-effect: non-scaling-stroke;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.pomodoro-progress-track {
-  stroke: rgba(255,255,255,.105);
-  stroke-width: 3;
-}
-.pomodoro-progress-value {
-  stroke: #ff9f0a;
-  stroke-width: 3;
-  filter: drop-shadow(0 0 4px rgba(255,159,10,.38));
-  transition: stroke-dashoffset .6s linear;
-}
-.home-pomodoro .pomodoro-dial {
-  position: relative;
-  z-index: 2;
-  grid-column: 2;
-  grid-row: 1;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0;
-  min-width: 0;
-}
-.home-pomodoro .pomodoro-dial span {
-  color: #fff;
-  font: 650 clamp(28px, 6.2vh, 62px)/.92 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.06em;
-}
-.home-pomodoro .pomodoro-dial input {
-  width: 1.42em;
-  padding: 3px 0;
-  border: 0;
-  border-radius: 10px;
-  outline: none;
-  background: transparent;
-  color: #fff;
-  font: 650 clamp(28px, 6.2vh, 62px)/.92 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.06em;
-  text-align: center;
-  appearance: textfield;
-  cursor: ns-resize;
-}
-.home-pomodoro .pomodoro-dial input:focus {
-  background: rgba(255,255,255,.075);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
-}
-.home-pomodoro .pomodoro-dial input[readonly] { cursor: default; }
-.home-pomodoro > .pomodoro-toggle,
-.home-pomodoro > .pomodoro-reset {
-  position: relative;
-  z-index: 3;
-  grid-row: 1;
-  width: clamp(42px, 7vh, 62px);
-  height: clamp(42px, 7vh, 62px);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: transform var(--d-fast) var(--ease), background var(--d-fast) var(--ease);
-}
-.home-pomodoro > .pomodoro-toggle {
-  grid-column: 1;
-  background: #24252a;
-  color: #fff;
-}
-.home-pomodoro > .pomodoro-reset {
-  grid-column: 3;
-  background: rgba(116,22,25,.92);
-  color: #ff453a;
-}
-.home-pomodoro > .pomodoro-reset[hidden] {
-  display: block;
-  visibility: hidden;
-  pointer-events: none;
-}
-.home-pomodoro > .pomodoro-toggle:hover,
-.home-pomodoro > .pomodoro-reset:hover { transform: scale(1.06); }
-.home-pomodoro > .pomodoro-toggle:active,
-.home-pomodoro > .pomodoro-reset:active { transform: scale(.94); }
-.home-pomodoro > .pomodoro-toggle svg,
-.home-pomodoro > .pomodoro-reset svg {
-  width: 46%;
-  height: 46%;
-  fill: currentColor;
-}
-.home-pomodoro > .pomodoro-reset svg { fill: none; }
-.home-pomodoro[data-widget-size='mini'] {
-  grid-template-columns: 30px minmax(64px, 1fr) 30px;
-  gap: 2px;
-  padding: 9px;
-}
-.home-pomodoro[data-widget-size='mini'] > .pomodoro-toggle,
-.home-pomodoro[data-widget-size='mini'] > .pomodoro-reset {
-  width: 30px;
-  height: 30px;
-}
-.home-pomodoro[data-widget-size='mini'] .pomodoro-dial input,
-.home-pomodoro[data-widget-size='mini'] .pomodoro-dial span {
-  font-size: clamp(22px, 4.2vh, 34px);
-}
-
-/* ============ 首页播放器与计时器 · 参考图精确排版 ============ */
-/* effects.js 会给直接子元素补层级；尺寸按钮必须始终脱离内容流并贴右下角。 */
-.home-music > .widget-size-control,
-.home-pomodoro > .widget-size-control,
-.home-music[data-widget-size] > .widget-size-control,
-.home-pomodoro[data-widget-size] > .widget-size-control {
-  position: absolute;
-  /* 绝对定位元素若残留 grid-area，会以网格单元而不是整个模块为包含块。 */
-  grid-column: auto !important;
-  grid-row: auto !important;
-  align-self: auto;
-  justify-self: auto;
-  top: auto;
-  right: 7px;
-  bottom: 7px;
-  z-index: 20;
-  width: 24px;
-  height: 24px;
-}
-
-/* 汽水音乐：放弃封面，动态背景上只保留左下标题与右下毛玻璃控制组。 */
-.home-music,
-.home-music[data-widget-size='mini'],
-.home-music[data-widget-size='small'],
-.home-music[data-widget-size='medium'],
-.home-music[data-widget-size='large'] {
-  position: relative;
-  display: block;
-  padding: 0;
-  text-align: left;
-  cursor: pointer;
-}
-.home-music > .music-copy,
-.home-music[data-widget-size] > .music-copy {
-  position: absolute;
-  left: clamp(11px, 1.6vw, 18px);
-  right: 152px;
-  bottom: clamp(11px, 1.7vh, 17px);
-  z-index: 4;
-  display: block;
-  min-height: 0;
-  pointer-events: none;
-}
-.home-music .music-copy strong {
-  display: block;
-  overflow: hidden;
-  color: rgba(255,255,255,.96);
-  font-family: "PingFang SC", "Hiragino Sans GB", var(--font);
-  font-size: clamp(12px, 1.9vh, 17px);
-  font-weight: 760;
-  line-height: 1.1;
-  letter-spacing: -.035em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-shadow: 0 2px 12px rgba(0,0,0,.48);
-}
-.home-music > .music-controls,
-.home-music[data-widget-size] > .music-controls {
-  position: absolute;
-  right: 39px;
-  bottom: 8px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 5px;
-}
-.home-music .music-controls button,
-.home-music[data-widget-size] .music-controls button,
-.home-music[data-widget-size] .music-controls .music-play {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255,255,255,.16);
-  border-radius: 50%;
-  background: linear-gradient(145deg, rgba(255,255,255,.18), rgba(255,255,255,.075));
-  color: rgba(255,255,255,.92);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 7px 18px rgba(0,0,0,.24);
-  backdrop-filter: blur(18px) saturate(1.35);
-  -webkit-backdrop-filter: blur(18px) saturate(1.35);
-}
-.home-music .music-controls .music-play {
-  width: 34px;
-  height: 34px;
-  background: linear-gradient(145deg, rgba(255,255,255,.3), rgba(255,255,255,.13));
-  color: #fff;
-}
-.home-music .music-controls button:hover {
-  background: linear-gradient(145deg, rgba(255,255,255,.3), rgba(255,255,255,.13));
-  border-color: rgba(255,255,255,.25);
-}
-.home-music[data-widget-size='mini'] > .music-copy {
-  left: 10px;
-  right: 114px;
-  bottom: 10px;
-}
-.home-music[data-widget-size='mini'] .music-copy strong { font-size: 10px; }
-.home-music[data-widget-size='mini'] > .music-controls {
-  right: 34px;
-  bottom: 6px;
-  gap: 2px;
-}
-.home-music[data-widget-size='mini'] .music-controls button,
-.home-music[data-widget-size='mini'] .music-controls .music-play {
-  width: 23px;
-  height: 23px;
-}
-.home-music[data-widget-size='mini'] .music-controls .music-play {
-  width: 27px;
-  height: 27px;
-}
-.home-music[data-widget-size='small'] > .music-copy {
-  left: 10px;
-  right: 114px;
-  bottom: 11px;
-}
-.home-music[data-widget-size='small'] .music-copy strong { font-size: 11px; }
-.home-music[data-widget-size='small'] > .music-controls {
-  right: 34px;
-  bottom: 7px;
-  gap: 2px;
-}
-.home-music[data-widget-size='small'] .music-controls button,
-.home-music[data-widget-size='small'] .music-controls .music-play {
-  width: 23px;
-  height: 23px;
-}
-.home-music[data-widget-size='small'] .music-controls .music-play {
-  width: 27px;
-  height: 27px;
-}
-
-/* 番茄钟：SVG 就是模块自身描边，不再创建第二层圆角卡片。 */
-.home-pomodoro,
-.home-pomodoro[data-widget-size='mini'],
-.home-pomodoro[data-widget-size='small'],
-.home-pomodoro[data-widget-size='medium'],
-.home-pomodoro[data-widget-size='large'] {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  grid-template-columns: minmax(52px, .82fr) minmax(126px, 1.4fr) minmax(52px, .82fr);
-  grid-template-rows: 1fr;
-  align-items: center;
-  justify-items: center;
-  gap: clamp(7px, 1.25vw, 18px);
-  padding: clamp(18px, 2.4vh, 28px);
-  overflow: hidden;
-  background: #030303;
-}
-.home-pomodoro > .pomodoro-progress {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  pointer-events: none;
-  transform: none;
-  background: none;
-  box-shadow: none;
-}
-.home-pomodoro .pomodoro-progress-track {
-  stroke: rgba(255,255,255,.11);
-  stroke-width: 3.5;
-}
-.home-pomodoro .pomodoro-progress-value {
-  stroke: #ff9f0a;
-  stroke-width: 3.5;
-  filter: drop-shadow(0 0 4px rgba(255,159,10,.34));
-}
-.home-pomodoro > .pomodoro-readout,
-.home-pomodoro[data-widget-size] > .pomodoro-readout {
-  position: relative;
-  z-index: 3;
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
-.pomodoro-status {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  color: rgba(255,255,255,.45);
-  font: 570 clamp(10px, 1.75vh, 14px)/1 "SF Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-}
-.pomodoro-status svg { width: 12px; height: 12px; opacity: .72; }
-.home-pomodoro .pomodoro-dial {
-  position: relative;
-  z-index: 3;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0;
-}
-.home-pomodoro .pomodoro-dial span,
-.home-pomodoro .pomodoro-dial input {
-  color: #fff;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-  font-size: clamp(46px, 10.5vh, 72px);
-  font-weight: 650;
-  line-height: .88;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.065em;
-}
-.home-pomodoro .pomodoro-dial input {
-  width: 1.4em;
-  padding: 2px 0;
-  border-radius: 10px;
-}
-.pomodoro-caption {
-  color: rgba(255,255,255,.42);
-  font: 520 clamp(11px, 2vh, 16px)/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  letter-spacing: -.02em;
-}
-.home-pomodoro > .pomodoro-toggle,
-.home-pomodoro > .pomodoro-reset {
-  position: relative;
-  z-index: 7;
-  grid-row: 1;
-  width: clamp(50px, 10.5vh, 70px);
-  height: clamp(50px, 10.5vh, 70px);
-  border: 1px solid rgba(255,255,255,.035);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 12px 28px rgba(0,0,0,.3);
-}
-.home-pomodoro > .pomodoro-toggle {
-  grid-column: 1;
-  background: #24252a;
-  color: #fff;
-}
-.home-pomodoro > .pomodoro-reset {
-  grid-column: 3;
-  background: #64171b;
-  color: #ff453a;
-}
-.home-pomodoro > .pomodoro-reset[hidden] {
-  display: block;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-/* mini：横向压缩，保留参考图的左按钮—数字—右按钮结构。 */
-.home-pomodoro[data-widget-size='mini'] {
-  grid-template-columns: 34px minmax(70px, 1fr) 34px;
-  gap: 4px;
-  padding: 9px 12px;
-}
-.home-pomodoro[data-widget-size='mini'] .pomodoro-status,
-.home-pomodoro[data-widget-size='mini'] .pomodoro-caption { display: none; }
-.home-pomodoro[data-widget-size='mini'] .pomodoro-dial input,
-.home-pomodoro[data-widget-size='mini'] .pomodoro-dial span { font-size: 31px; }
-.home-pomodoro[data-widget-size='mini'] > .pomodoro-toggle,
-.home-pomodoro[data-widget-size='mini'] > .pomodoro-reset { width: 34px; height: 34px; }
-
-/* small：窄而高，读数在上、操作在下，避免横向挤压。 */
-.home-pomodoro[data-widget-size='small'] {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 12px 10px;
-  padding: 18px 16px 24px;
-}
-.home-pomodoro[data-widget-size='small'] > .pomodoro-readout {
-  grid-column: 1 / -1;
-  grid-row: 1;
-}
-.home-pomodoro[data-widget-size='small'] > .pomodoro-toggle {
-  grid-column: 1;
-  grid-row: 2;
-  justify-self: end;
-}
-.home-pomodoro[data-widget-size='small'] > .pomodoro-reset {
-  grid-column: 2;
-  grid-row: 2;
-  justify-self: start;
-}
-.home-pomodoro[data-widget-size='small'] .pomodoro-dial input,
-.home-pomodoro[data-widget-size='small'] .pomodoro-dial span { font-size: 42px; }
-.home-pomodoro[data-widget-size='small'] > .pomodoro-toggle,
-.home-pomodoro[data-widget-size='small'] > .pomodoro-reset { width: 48px; height: 48px; }
-
-/* large：竖向空间更充足，读数在上、双操作在下，避免机械放大三列。 */
-.home-pomodoro[data-widget-size='large'] {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 26px 18px;
-  padding: 42px 34px 54px;
-}
-.home-pomodoro[data-widget-size='large'] > .pomodoro-readout {
-  grid-column: 1 / -1;
-  grid-row: 1;
-}
-.home-pomodoro[data-widget-size='large'] > .pomodoro-toggle {
-  grid-column: 1;
-  grid-row: 2;
-  justify-self: end;
-}
-.home-pomodoro[data-widget-size='large'] > .pomodoro-reset {
-  grid-column: 2;
-  grid-row: 2;
-  justify-self: start;
-}
-.home-pomodoro[data-widget-size='large'] .pomodoro-dial input,
-.home-pomodoro[data-widget-size='large'] .pomodoro-dial span { font-size: 76px; }
-.home-pomodoro[data-widget-size='large'] > .pomodoro-toggle,
-.home-pomodoro[data-widget-size='large'] > .pomodoro-reset { width: 76px; height: 76px; }
-
-/* ============ 交互稳定性审计：2026-08-22 ============ */
-/* 番茄钟进度就是模块 border：圆角、比例和裁切只保留一套几何。 */
-.home-pomodoro,
-.home-pomodoro[data-widget-size='mini'],
-.home-pomodoro[data-widget-size='small'],
-.home-pomodoro[data-widget-size='medium'],
-.home-pomodoro[data-widget-size='large'] {
-  --pomodoro-progress: 1;
-  box-sizing: border-box;
-  /* 覆盖便当盒通用的无边框规则：这里的 border 本身就是倒计时轨道。 */
-  border: 4px solid transparent !important;
-  background:
-    linear-gradient(#030303, #030303) padding-box,
-    conic-gradient(
-      from -90deg,
-      #ff9f0a 0turn,
-      #ffb129 calc(var(--pomodoro-progress) * 1turn),
-      rgba(255,255,255,.105) 0turn,
-      rgba(255,255,255,.105) 1turn
-    ) border-box;
-}
-
-/* 横向尺寸保持参考图三列居中；隐藏重置键仍占位，读数不会偏移。 */
-.home-pomodoro[data-widget-size='mini'],
-.home-pomodoro[data-widget-size='medium'] {
-  grid-template-rows: 1fr;
-  align-items: center;
-}
-.home-pomodoro[data-widget-size='medium'] {
-  grid-template-columns: minmax(54px,.72fr) minmax(138px,1.62fr) minmax(54px,.72fr);
-  padding: 20px 24px;
-}
-.home-pomodoro[data-widget-size='medium'] > .pomodoro-readout { grid-column: 2; grid-row: 1; }
-.home-pomodoro[data-widget-size='medium'] > .pomodoro-toggle { grid-column: 1; grid-row: 1; }
-.home-pomodoro[data-widget-size='medium'] > .pomodoro-reset { grid-column: 3; grid-row: 1; }
-
-/* 未开始时只有一个操作键：改为读数在上、启动键在下，避免左侧空位造成视觉偏心。 */
-.home-pomodoro[data-widget-size='mini'][data-state='idle'],
-.home-pomodoro[data-widget-size='medium'][data-state='idle'] {
-  grid-template-columns: 1fr;
-  grid-template-rows: minmax(0, 1fr) auto;
-  justify-items: center;
-}
-.home-pomodoro[data-widget-size='mini'][data-state='idle'] { gap: 3px; padding: 9px 12px 11px; }
-.home-pomodoro[data-widget-size='medium'][data-state='idle'] { gap: 10px; padding: 20px 24px 24px; }
-.home-pomodoro[data-widget-size='mini'][data-state='idle'] > .pomodoro-readout,
-.home-pomodoro[data-widget-size='medium'][data-state='idle'] > .pomodoro-readout {
-  grid-column: 1;
-  grid-row: 1;
-}
-.home-pomodoro[data-widget-size='mini'][data-state='idle'] > .pomodoro-toggle,
-.home-pomodoro[data-widget-size='medium'][data-state='idle'] > .pomodoro-toggle {
-  grid-column: 1;
-  grid-row: 2;
-  justify-self: center;
-}
-.home-pomodoro[data-widget-size='mini'][data-state='idle'] > .pomodoro-reset,
-.home-pomodoro[data-widget-size='medium'][data-state='idle'] > .pomodoro-reset { display: none; }
-
-/* 竖向尺寸使用单列、上下操作：默认只有启动键时也始终居中。 */
-.home-pomodoro[data-widget-size='small'],
-.home-pomodoro[data-widget-size='large'] {
-  grid-template-columns: 1fr;
-  grid-template-rows: minmax(0,1fr) auto auto;
-  justify-items: center;
-  align-items: center;
-}
-.home-pomodoro[data-widget-size='small'] { gap: 8px; padding: 18px 16px 28px; }
-.home-pomodoro[data-widget-size='large'] { gap: 14px; padding: 44px 34px 54px; }
-.home-pomodoro[data-widget-size='small'] > .pomodoro-readout,
-.home-pomodoro[data-widget-size='large'] > .pomodoro-readout {
-  grid-column: 1;
-  grid-row: 1;
-  align-self: center;
-  justify-self: center;
-}
-.home-pomodoro[data-widget-size='small'] > .pomodoro-toggle,
-.home-pomodoro[data-widget-size='large'] > .pomodoro-toggle {
-  grid-column: 1;
-  grid-row: 2;
-  justify-self: center;
-}
-.home-pomodoro[data-widget-size='small'] > .pomodoro-reset,
-.home-pomodoro[data-widget-size='large'] > .pomodoro-reset {
-  grid-column: 1;
-  grid-row: 3;
-  justify-self: center;
-}
-.home-pomodoro[data-widget-size='small'] > .pomodoro-reset[hidden],
-.home-pomodoro[data-widget-size='large'] > .pomodoro-reset[hidden] { display: none; }
-.home-pomodoro[data-widget-size='small'][data-state='idle'] > .pomodoro-toggle,
-.home-pomodoro[data-widget-size='large'][data-state='idle'] > .pomodoro-toggle {
-  grid-row: 2 / 4;
-  align-self: center;
-}
-.home-pomodoro[data-widget-size='large'] .pomodoro-dial input,
-.home-pomodoro[data-widget-size='large'] .pomodoro-dial span { font-size: 72px; }
-.home-pomodoro[data-widget-size='large'] > .pomodoro-toggle,
-.home-pomodoro[data-widget-size='large'] > .pomodoro-reset { width: 68px; height: 68px; }
-
-/* 汽水音乐：四个比例各自匹配标题层级，并明确区分三枚控制图标。 */
-.home-music[data-widget-size] > .music-copy { display: block !important; }
-.home-music[data-widget-size] .music-controls button { display: grid !important; }
-.home-music .music-controls svg { width: 15px; height: 15px; }
-.home-music .music-controls button:not(.music-play) svg { fill: none; }
-.home-music .music-controls .music-play svg { fill: currentColor; stroke: none; }
-.home-music[data-widget-size='mini'] .music-copy strong { font-size: 13px; }
-.home-music[data-widget-size='small'] .music-copy strong { font-size: 17px; }
-.home-music[data-widget-size='medium'] .music-copy strong { font-size: 22px; }
-.home-music[data-widget-size='large'] .music-copy strong { font-size: 34px; }
-.home-music[data-widget-size='small'] > .music-copy,
-.home-music[data-widget-size='medium'] > .music-copy {
-  top: 20px;
-  right: 20px;
-  bottom: auto;
-  left: 20px;
-}
-.home-music[data-widget-size='large'] > .music-copy { right: 190px; bottom: 24px; left: 24px; }
-.home-music[data-widget-size='large'] > .music-controls { right: 46px; bottom: 17px; gap: 7px; }
-.home-music[data-widget-size='large'] .music-controls button { width: 40px; height: 40px; }
-.home-music[data-widget-size='large'] .music-controls .music-play { width: 46px; height: 46px; }
-.home-music[data-widget-size='large'] .music-controls svg { width: 19px; height: 19px; }
 
 /* 日期浮层永远属于当前象限，而不是按整块面板定位。 */
 .quadrant { position: relative; }
@@ -5182,114 +4241,6 @@ body {
 .home-bento > [data-layout-variant='tall'],
 .home-bento > [data-layout-variant='full'] { align-content: stretch; }
 
-/* 音乐：控制键尺寸固定，容器增大时只增加标题与背景的呼吸空间。 */
-.home-bento > .home-music[data-layout-variant] { position: relative; display: block; padding: 0; }
-.home-bento > .home-music[data-layout-variant] > .music-copy {
-  position: absolute;
-  z-index: 4;
-  display: block !important;
-  min-width: 0;
-  pointer-events: none;
-}
-.home-bento > .home-music[data-layout-variant] > .music-controls {
-  position: absolute;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-.home-bento > .home-music[data-layout-variant] .music-controls button { display: grid !important; width: 30px; height: 30px; }
-.home-bento > .home-music[data-layout-variant] .music-controls .music-play { width: 34px; height: 34px; }
-.home-bento > .home-music[data-layout-variant='mini'] > .music-copy {
-  left: 9px; right: 106px; bottom: 9px;
-}
-.home-bento > .home-music[data-layout-variant='mini'] .music-copy strong { font-size: 10px; }
-.home-bento > .home-music[data-layout-variant='mini'] > .music-controls { right: 31px; bottom: 5px; gap: 2px; }
-.home-bento > .home-music[data-layout-variant='mini'] .music-controls button { width: 23px; height: 23px; }
-.home-bento > .home-music[data-layout-variant='mini'] .music-controls .music-play { width: 27px; height: 27px; }
-.home-bento > .home-music[data-layout-variant='compact'] > .music-copy {
-  top: 16px; right: 14px; bottom: auto; left: 14px;
-}
-.home-bento > .home-music[data-layout-variant='compact'] .music-copy strong { font-size: 14px; }
-.home-bento > .home-music[data-layout-variant='compact'] > .music-controls { right: 34px; bottom: 12px; gap: 3px; }
-.home-bento > .home-music[data-layout-variant='wide'] > .music-copy {
-  top: 18px; right: 150px; bottom: auto; left: 18px;
-}
-.home-bento > .home-music[data-layout-variant='wide'] .music-copy strong { font-size: 18px; }
-.home-bento > .home-music[data-layout-variant='wide'] > .music-controls { right: 38px; bottom: 12px; gap: 5px; }
-.home-bento > .home-music[data-layout-variant='tall'] > .music-copy,
-.home-bento > .home-music[data-layout-variant='full'] > .music-copy {
-  left: 22px; right: 170px; bottom: 22px; top: auto;
-}
-.home-bento > .home-music[data-layout-variant='tall'] .music-copy strong,
-.home-bento > .home-music[data-layout-variant='full'] .music-copy strong { font-size: 24px; }
-.home-bento > .home-music[data-layout-variant='tall'] > .music-controls,
-.home-bento > .home-music[data-layout-variant='full'] > .music-controls { right: 42px; bottom: 16px; gap: 6px; }
-
-/* 番茄钟：根据实际宽高切换三列或纵向，数字和按钮不做整体缩放。 */
-.home-bento > .home-pomodoro[data-layout-variant] { display: grid; align-items: center; justify-items: center; overflow: hidden; }
-.home-bento > .home-pomodoro[data-layout-variant] > .pomodoro-readout,
-.home-bento > .home-pomodoro[data-layout-variant] > .pomodoro-toggle,
-.home-bento > .home-pomodoro[data-layout-variant] > .pomodoro-reset { position: relative; transform: none; }
-.home-bento > .home-pomodoro[data-layout-variant] > .pomodoro-reset[hidden] { display: none; }
-.home-bento > .home-pomodoro[data-layout-variant='mini'] {
-  grid-template-columns: 28px minmax(76px, 1fr) 28px;
-  grid-template-rows: 1fr;
-  gap: 2px;
-  padding: 8px;
-}
-.home-bento > .home-pomodoro[data-layout-variant='mini'] > .pomodoro-toggle { grid-column: 1; grid-row: 1; }
-.home-bento > .home-pomodoro[data-layout-variant='mini'] > .pomodoro-readout { grid-column: 2; grid-row: 1; }
-.home-bento > .home-pomodoro[data-layout-variant='mini'] > .pomodoro-reset { grid-column: 3; grid-row: 1; }
-.home-bento > .home-pomodoro[data-layout-variant='mini'] .pomodoro-status,
-.home-bento > .home-pomodoro[data-layout-variant='mini'] .pomodoro-caption { display: none; }
-.home-bento > .home-pomodoro[data-layout-variant='mini'] .pomodoro-dial input,
-.home-bento > .home-pomodoro[data-layout-variant='mini'] .pomodoro-dial span { font-size: 26px; }
-.home-bento > .home-pomodoro[data-layout-variant='mini'] > .pomodoro-toggle,
-.home-bento > .home-pomodoro[data-layout-variant='mini'] > .pomodoro-reset { width: 28px; height: 28px; }
-.home-bento > .home-pomodoro[data-layout-variant='compact'],
-.home-bento > .home-pomodoro[data-layout-variant='tall'] {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 12px 10px;
-  padding: 18px 16px 24px;
-}
-.home-bento > .home-pomodoro[data-layout-variant='compact'] > .pomodoro-readout,
-.home-bento > .home-pomodoro[data-layout-variant='tall'] > .pomodoro-readout { grid-column: 1 / -1; grid-row: 1; }
-.home-bento > .home-pomodoro[data-layout-variant='compact'] > .pomodoro-toggle,
-.home-bento > .home-pomodoro[data-layout-variant='tall'] > .pomodoro-toggle { grid-column: 1; grid-row: 2; justify-self: end; }
-.home-bento > .home-pomodoro[data-layout-variant='compact'] > .pomodoro-reset,
-.home-bento > .home-pomodoro[data-layout-variant='tall'] > .pomodoro-reset { grid-column: 2; grid-row: 2; justify-self: start; }
-.home-bento > .home-pomodoro[data-layout-variant='compact'] .pomodoro-dial input,
-.home-bento > .home-pomodoro[data-layout-variant='compact'] .pomodoro-dial span { font-size: 42px; }
-.home-bento > .home-pomodoro[data-layout-variant='tall'] .pomodoro-dial input,
-.home-bento > .home-pomodoro[data-layout-variant='tall'] .pomodoro-dial span { font-size: 58px; }
-.home-bento > .home-pomodoro[data-layout-variant='compact'] > .pomodoro-toggle,
-.home-bento > .home-pomodoro[data-layout-variant='compact'] > .pomodoro-reset,
-.home-bento > .home-pomodoro[data-layout-variant='tall'] > .pomodoro-toggle,
-.home-bento > .home-pomodoro[data-layout-variant='tall'] > .pomodoro-reset { width: 48px; height: 48px; }
-.home-bento > .home-pomodoro[data-layout-variant='wide'],
-.home-bento > .home-pomodoro[data-layout-variant='full'] {
-  grid-template-columns: minmax(46px, .75fr) minmax(118px, 1.5fr) minmax(46px, .75fr);
-  grid-template-rows: 1fr;
-  gap: 14px;
-  padding: 14px 18px;
-}
-.home-bento > .home-pomodoro[data-layout-variant='wide'] > .pomodoro-toggle,
-.home-bento > .home-pomodoro[data-layout-variant='full'] > .pomodoro-toggle { grid-column: 1; grid-row: 1; }
-.home-bento > .home-pomodoro[data-layout-variant='wide'] > .pomodoro-readout,
-.home-bento > .home-pomodoro[data-layout-variant='full'] > .pomodoro-readout { grid-column: 2; grid-row: 1; }
-.home-bento > .home-pomodoro[data-layout-variant='wide'] > .pomodoro-reset,
-.home-bento > .home-pomodoro[data-layout-variant='full'] > .pomodoro-reset { grid-column: 3; grid-row: 1; }
-.home-bento > .home-pomodoro[data-layout-variant='wide'] .pomodoro-dial input,
-.home-bento > .home-pomodoro[data-layout-variant='wide'] .pomodoro-dial span,
-.home-bento > .home-pomodoro[data-layout-variant='full'] .pomodoro-dial input,
-.home-bento > .home-pomodoro[data-layout-variant='full'] .pomodoro-dial span { font-size: 44px; }
-.home-bento > .home-pomodoro[data-layout-variant='wide'] > .pomodoro-toggle,
-.home-bento > .home-pomodoro[data-layout-variant='wide'] > .pomodoro-reset,
-.home-bento > .home-pomodoro[data-layout-variant='full'] > .pomodoro-toggle,
-.home-bento > .home-pomodoro[data-layout-variant='full'] > .pomodoro-reset { width: 46px; height: 46px; }
-
 /* 录音、列表、笔记和镜子都在容器内部消化增量空间。 */
 .home-bento > .home-recorder[data-layout-variant] { position: relative; display: flex; flex-direction: column; padding-bottom: 52px; }
 .home-bento > .home-recorder[data-layout-variant] .recorder-head { min-width: 0; overflow: hidden; }
@@ -5383,3 +4334,97 @@ body {
 .settings-home-module-grid input:focus-visible + i { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .settings-home-module-grid input:disabled + i { opacity: .55; }
 #settings-home-module-status[data-state='warning'] { color: #ffb16d; }
+
+/* ============ 首页 · 快速启动 ============ */
+.home-launcher {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  min-width: 0;
+  min-height: 0;
+}
+.home-launcher .tile-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-1); }
+.launcher-add {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(255,255,255,.08);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--d-fast) var(--ease), color var(--d-fast) var(--ease), transform var(--d-fast) var(--ease);
+}
+.launcher-add svg { width: 13px; height: 13px; }
+.launcher-add:hover { background: rgba(255,255,255,.16); color: var(--text-1); transform: scale(1.08); }
+.launcher-add:active { transform: scale(.92); }
+.launcher-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: var(--s-1);
+  align-content: start;
+  overflow: auto;
+  scrollbar-width: none;
+}
+.launcher-grid::-webkit-scrollbar { width: 0; height: 0; }
+.launcher-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 3px 5px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--d-fast) var(--ease), transform var(--d-fast) var(--ease);
+}
+.launcher-item:hover { background: rgba(255,255,255,.07); }
+.launcher-item:active { transform: scale(.95); }
+.launcher-item.launcher-opening { opacity: .5; }
+.launcher-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(255,255,255,.06);
+  color: var(--text-2);
+  font: 600 13px/1 var(--font);
+  overflow: hidden;
+}
+.launcher-icon img { width: 100%; height: 100%; object-fit: contain; }
+.launcher-name { max-width: 100%; color: var(--text-3); font-size: 9px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.launcher-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 15px;
+  height: 15px;
+  display: none;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255,88,88,.9);
+  color: #fff;
+  font: 600 11px/1 var(--font);
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
+}
+.launcher-item:hover .launcher-remove { display: grid; }
+.launcher-hint { margin: 0; padding: 2px 0; color: var(--text-4); font-size: 9px; line-height: 1.35; text-align: center; }
+.home-bento > .home-launcher[data-layout-variant='mini'] { gap: 2px; padding: 8px; }
+.home-bento > .home-launcher[data-layout-variant='mini'] .launcher-name,
+.home-bento > .home-launcher[data-layout-variant='mini'] .launcher-hint { display: none; }
+.home-bento > .home-launcher[data-layout-variant='mini'] .launcher-icon { width: 24px; height: 24px; border-radius: 7px; }
+.home-bento > .home-launcher[data-layout-variant='wide'] .launcher-icon,
+.home-bento > .home-launcher[data-layout-variant='tall'] .launcher-icon,
+.home-bento > .home-launcher[data-layout-variant='full'] .launcher-icon { width: 36px; height: 36px; border-radius: 11px; }
+.home-bento > .home-launcher[data-layout-variant='wide'] .launcher-name,
+.home-bento > .home-launcher[data-layout-variant='tall'] .launcher-name,
+.home-bento > .home-launcher[data-layout-variant='full'] .launcher-name { font-size: 10px; }

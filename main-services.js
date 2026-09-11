@@ -529,59 +529,6 @@ function updateDefaultTabPreference(settings, defaultTab) {
   return { ...source, defaultTab: normalized };
 }
 
-// 汽水音乐没有「控制 / 播放」菜单，辅助功能树也读不出窗口与菜单项名，
-// 所以只能往应用内发按键。Space(49) 是播放/暂停切换键，play 与 pause 共用它。
-// 原实现里 play 用的是 Cmd+Right——那和 next 完全同一个键，
-// 所以「点播放」实际发出的是「下一曲」，歌不会开始播，这正是状态错乱的根因。
-function sodaShortcutSpec(action) {
-  if (action === 'play' || action === 'pause') return { keyCode: 49, command: false, dismissOverlays: true };
-  if (action === 'next') return { keyCode: 124, command: true, dismissOverlays: true };
-  if (action === 'previous') return { keyCode: 123, command: true, dismissOverlays: true };
-  return null;
-}
-
-async function controlSodaMusic(action, dependencies = {}, currentPlaying = false) {
-  if (!['play', 'pause', 'next', 'previous'].includes(action)) {
-    return { ok: false, error: 'invalid_action', running: false, playing: false };
-  }
-
-  const isRunning = dependencies.isRunning;
-  const launch = dependencies.launch;
-  const sendShortcut = dependencies.sendShortcut;
-  const sleep = dependencies.sleep || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-  if (![isRunning, launch, sendShortcut].every((dependency) => typeof dependency === 'function')) {
-    return { ok: false, error: 'music_control_unavailable', running: false, playing: false };
-  }
-
-  let running = await isRunning();
-  let bootstrapped = false;
-  if (!running) {
-    if (action !== 'play') return { ok: false, error: 'no_active_session', running: false, playing: false };
-    const launched = await launch();
-    if (!launched) return { ok: false, error: 'launch_failed', running: false, playing: false };
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      running = await isRunning();
-      if (running) break;
-      await sleep(200);
-    }
-    if (!running) return { ok: false, error: 'launch_failed', running: false, playing: false };
-    bootstrapped = true;
-    await sleep(3000);
-  }
-
-  const shortcutResult = await sendShortcut(action);
-  if (!shortcutResult || shortcutResult.ok !== true) {
-    return {
-      ok: false,
-      error: shortcutResult && shortcutResult.error || 'soda_control_failed',
-      running: true,
-      playing: Boolean(currentPlaying),
-    };
-  }
-  const playing = action === 'pause' ? false : true;
-  return { ok: true, running: true, playing, bootstrapped };
-}
-
 module.exports = {
   isPrivateAddress,
   decodeHtmlEntities,
@@ -611,6 +558,4 @@ module.exports = {
   updateFeaturePreference,
   normalizeDefaultTabPreference,
   updateDefaultTabPreference,
-  sodaShortcutSpec,
-  controlSodaMusic,
 };

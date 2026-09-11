@@ -87,8 +87,8 @@ async function main() {
   assert.equal(await evaluate('window.slateAPI.platform'), 'win32');
   assert.equal(await evaluate('window.slateAPI.getAppSettings().then(s => s.features.clip)'), false);
   assert.equal(await evaluate('document.getElementById("mirror-video").srcObject === null'), true);
-  assert.deepEqual(await evaluate('window.SlateHome.getVisibility().visibleIds'), ['pomodoro', 'recorder', 'mirror', 'note', 'commands']);
-  assert.equal(await evaluate('window.SlateHome.setModuleVisible("music", true).ok'), false);
+  assert.deepEqual(await evaluate('window.SlateHome.getVisibility().visibleIds'), ['launcher', 'recorder', 'mirror', 'note', 'commands']);
+  assert.equal(await evaluate('window.SlateHome.setModuleVisible("windows", true).ok'), false);
   assert.equal(await evaluate('window.slateAPI.listWindows().then(r => r.error)'), 'unsupported');
   await evaluate('document.getElementById("slate").click()');
   await until(() => evaluate('document.getElementById("app").classList.contains("expanded")'), 'expand');
@@ -140,7 +140,7 @@ async function main() {
   await until(() => evaluate('window.slateAPI.listTaskCompletions().then(r => r.some(i => i.title === "Windows smoke complete"))'), 'notification recorded');
   await evaluate('document.getElementById("tab-button-settings").click()');
   await delay(300);
-  assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-settings-home-module]")).filter(i => !i.closest("label").hidden).map(i => i.dataset.settingsHomeModule)'), ['pomodoro', 'recorder', 'mirror', 'note', 'commands']);
+  assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-settings-home-module]")).filter(i => !i.closest("label").hidden).map(i => i.dataset.settingsHomeModule)'), ['launcher', 'recorder', 'mirror', 'note', 'commands']);
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(evidence, retained ? 'retained.png' : 'windows-settings.png'), Buffer.from(screenshot.data, 'base64'));
   assert.deepEqual(exceptions, [], 'No uncaught renderer errors');

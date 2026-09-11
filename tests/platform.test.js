@@ -20,17 +20,17 @@ test('Mac keeps the collapsed strip at the physical top origin', () => {
 });
 
 test('Windows capabilities cannot enable Mac-only integrations', () => {
-  assert.deepEqual(platform.capabilities('win32').unavailableHomeModules, ['music', 'windows']);
+  assert.deepEqual(platform.capabilities('win32').unavailableHomeModules, ['windows']);
   assert.equal(platform.capabilities('win32').automaticPaste, false);
   assert.equal(platform.capabilities('win32').autoLaunch, true);
   assert.deepEqual(platform.capabilities('darwin').unavailableHomeModules, []);
 });
 
 test('platform filtering leaves saved preferences intact and recovers a usable home', () => {
-  const registry = ['music', 'pomodoro', 'recorder', 'windows', 'mirror', 'note', 'commands'];
-  const hidden = ['pomodoro', 'recorder', 'mirror', 'note', 'commands'];
+  const registry = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+  const hidden = ['recorder', 'mirror', 'note', 'commands'];
   const before = [...hidden];
-  assert.deepEqual(platform.effectiveHiddenModules(hidden, registry, ['music', 'windows']), ['music', 'recorder', 'windows', 'mirror', 'note', 'commands']);
+  assert.deepEqual(platform.effectiveHiddenModules(hidden, registry, ['windows']), ['recorder', 'windows', 'mirror', 'note', 'commands']);
   assert.deepEqual(hidden, before);
   assert.deepEqual(platform.effectiveHiddenModules(hidden, registry, []), hidden);
 });

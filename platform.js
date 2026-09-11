@@ -5,7 +5,7 @@
   function capabilities(platform) {
     return {
       platform,
-      unavailableHomeModules: platform === 'darwin' ? [] : ['music', 'windows'],
+      unavailableHomeModules: platform === 'darwin' ? [] : ['windows'],
       automaticPaste: platform === 'darwin',
       autoLaunch: platform === 'darwin' || platform === 'win32',
     };

@@ -241,7 +241,7 @@ async function main() {
       api: true,
       mirror: true,
       features: 6,
-      homeModules: 7,
+      homeModules: 6,
       shortcut: true,
       defaultTab: { exists: true, value: 'home', options: 8 },
       workspace: true,
@@ -565,8 +565,7 @@ async function main() {
       window.__measureHomepage = function measureHomepage() {
         const surface = document.getElementById('home-bento').getBoundingClientRect();
         const protectedSelectors = {
-          music: ['.music-copy', '.music-controls'],
-          pomodoro: ['.pomodoro-readout', '.pomodoro-toggle', '.pomodoro-reset:not([hidden])'],
+          launcher: ['.launcher-grid', '.launcher-add'],
           recorder: ['.recorder-head', '.home-transcript:not([hidden])', '.recorder-controls'],
           windows: ['.tile-head', '.window-list'],
           mirror: ['.mirror-stage'],
@@ -669,7 +668,7 @@ async function main() {
           assert.equal(overlaps, false, '首页组件矩形不得重叠');
         }
       }
-      if (visibleCount < 7) {
+      if (visibleCount < 6) {
         assert.ok(measurement.sizeControls.every((control) => control.hidden && control.disabled && control.tabIndex === -1));
       } else {
         assert.ok(measurement.sizeControls.every((control) => !control.hidden && !control.disabled && control.tabIndex === 0));
@@ -680,16 +679,16 @@ async function main() {
       window.setSize(width, height);
       const matrix = await window.webContents.executeJavaScript(`
         (async () => {
-          const ids = ['music', 'pomodoro', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+          const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
           ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
           const results = [];
-          for (let count = 7; count >= 1; count -= 1) {
+          for (let count = 6; count >= 1; count -= 1) {
             document.getElementById('tab-button-home').click();
             await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             results.push(window.__measureHomepage());
             if (count > 1) {
               document.getElementById('tab-button-settings').click();
-              const input = document.querySelector('[data-settings-home-module="' + ids[7 - count] + '"]');
+              const input = document.querySelector('[data-settings-home-module="' + ids[6 - count] + '"]');
               input.checked = false;
               input.dispatchEvent(new Event('change', { bubbles: true }));
               await new Promise((resolve) => setTimeout(resolve, 20));
@@ -698,7 +697,7 @@ async function main() {
           return results;
         })()
       `);
-      matrix.forEach((measurement, index) => assertHomepageMeasurement(measurement, 7 - index));
+      matrix.forEach((measurement, index) => assertHomepageMeasurement(measurement, 6 - index));
 
       const finalWidgetGuard = await window.webContents.executeJavaScript(`
         (async () => {
@@ -717,13 +716,13 @@ async function main() {
       `);
       assert.equal(finalWidgetGuard.checked, true);
       assert.equal(finalWidgetGuard.visibleCount, 1);
-      assert.equal(finalWidgetGuard.storedCount, 6);
+      assert.equal(finalWidgetGuard.storedCount, 5);
       assert.match(finalWidgetGuard.message, /至少保留一个/);
     }
 
     const transactionAudit = await window.webContents.executeJavaScript(`
       (() => {
-        const ids = ['music', 'pomodoro', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         const first = window.SlateHome.setModuleVisible('mirror', false);
         const second = window.SlateHome.setModuleVisible('note', false);
@@ -747,7 +746,7 @@ async function main() {
         };
         const originalResolver = window.SlateDomain.resolveHomeWidgetLayout;
         window.SlateDomain.resolveHomeWidgetLayout = () => null;
-        const rollback = window.SlateHome.setModuleVisible('music', false);
+        const rollback = window.SlateHome.setModuleVisible('launcher', false);
         window.SlateDomain.resolveHomeWidgetLayout = originalResolver;
         const afterRollback = {
           hidden: JSON.stringify(window.SlateHome.getVisibility().hiddenIds),
@@ -794,7 +793,7 @@ async function main() {
 
     const persistenceAndRecorderAudit = await window.webContents.executeJavaScript(`
       (() => {
-        const ids = ['music', 'pomodoro', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         const originalSetItem = Storage.prototype.setItem;
         const storedBefore = localStorage.getItem('slate-home-hidden-modules-v1');
@@ -806,12 +805,12 @@ async function main() {
         const degradedState = window.SlateHome.getVisibility();
         const degradedStatus = document.getElementById('settings-home-module-status').textContent;
         const degradedStorageStable = storedBefore === localStorage.getItem('slate-home-hidden-modules-v1');
-        ['music', 'pomodoro', 'recorder', 'windows', 'note'].forEach((id) => {
+        ['launcher', 'recorder', 'windows', 'note'].forEach((id) => {
           window.SlateHome.setModuleVisible(id, false);
         });
         const rejectedWhileDirty = window.SlateHome.setModuleVisible('commands', false);
         Storage.prototype.setItem = originalSetItem;
-        const recovered = window.SlateHome.setModuleVisible('music', true);
+        const recovered = window.SlateHome.setModuleVisible('launcher', true);
         const recoveredState = window.SlateHome.getVisibility();
         const recoveredStored = JSON.parse(localStorage.getItem('slate-home-hidden-modules-v1'));
 
@@ -915,13 +914,13 @@ async function main() {
     `);
     assert.equal(panelMotionAudit.opened, true);
     assert.equal(panelMotionAudit.collapsed, true);
-    assert.equal(panelMotionAudit.tileEntranceAnimations, 0, '展开时不得再同时启动七张卡片的错峰缩放入场');
+    assert.equal(panelMotionAudit.tileEntranceAnimations, 0, '展开时不得再同时启动六张卡片的错峰缩放入场');
     assert.equal(panelMotionAudit.masonryReveal, false, '首页卡片不应在每次展开时重播入场');
     assert.equal(panelMotionAudit.contentLayerHasScale, false, '展开/收起不应缩放整个大面积内容层');
 
     const lifecycleAudit = await window.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['music', 'pomodoro', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         document.getElementById('tab-button-home').click();
         document.getElementById('app').classList.remove('collapsed', 'closing', 'opening');
@@ -941,66 +940,23 @@ async function main() {
         await new Promise((resolve) => setTimeout(resolve, 30));
         const scansAfterRestore = windowScans;
 
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        window.SlateHome.setModuleVisible('music', false);
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        const musicStopped = document.getElementById('music-color-bends').dataset.effectRunning === 'false';
-        window.SlateHome.setModuleVisible('music', true);
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        const musicIdleAfterRestore = document.getElementById('music-color-bends').dataset.effectRunning === 'false';
-        const musicTile = document.getElementById('music-color-bends').parentElement;
-        musicTile.dispatchEvent(new PointerEvent('pointerenter'));
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        const musicAnimatingOnHover = document.getElementById('music-color-bends').dataset.effectRunning === 'true';
-        musicTile.dispatchEvent(new PointerEvent('pointerleave'));
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        const musicStoppedAfterHover = document.getElementById('music-color-bends').dataset.effectRunning === 'false';
-
-        const minutes = document.getElementById('pomodoro-minutes');
-        const seconds = document.getElementById('pomodoro-seconds');
-        minutes.value = '00';
-        seconds.value = '10';
-        seconds.dispatchEvent(new Event('blur'));
-        document.getElementById('pomodoro-toggle').click();
-        const before = Number(minutes.value) * 60 + Number(seconds.value);
-        window.SlateHome.setModuleVisible('pomodoro', false);
-        await new Promise((resolve) => setTimeout(resolve, 1150));
-        const whileHidden = Number(minutes.value) * 60 + Number(seconds.value);
-        window.SlateHome.setModuleVisible('pomodoro', true);
-        const after = Number(minutes.value) * 60 + Number(seconds.value);
-        document.getElementById('pomodoro-reset').click();
         return {
           scansWhileHidden,
           scansAfterRestore,
-          musicStopped,
-          musicIdleAfterRestore,
-          musicAnimatingOnHover,
-          musicStoppedAfterHover,
-          before,
-          whileHidden,
-          after,
         };
       })()
     `);
     assert.equal(lifecycleAudit.scansWhileHidden, 0);
     assert.equal(lifecycleAudit.scansAfterRestore, 1);
-    assert.equal(lifecycleAudit.musicStopped, true);
-    assert.equal(lifecycleAudit.musicIdleAfterRestore, true);
-    assert.equal(lifecycleAudit.musicAnimatingOnHover, true);
-    assert.equal(lifecycleAudit.musicStoppedAfterHover, true);
-    assert.ok(lifecycleAudit.whileHidden < lifecycleAudit.before, '番茄钟隐藏后应继续计时');
-    assert.equal(lifecycleAudit.after, lifecycleAudit.whileHidden);
 
     const idlePerformanceAudit = await window.webContents.executeJavaScript(`
       (async () => {
         const appSurface = document.getElementById('app');
-        const canvas = document.getElementById('music-color-bends');
         document.getElementById('tab-button-home').click();
         appSurface.classList.remove('collapsed');
         appSurface.classList.add('expanded');
         document.dispatchEvent(new CustomEvent('slate:modechange', { detail: { expanded: true } }));
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        const stoppedWhileExpandedIdle = canvas.dataset.effectRunning === 'false';
         const hasInfinitePanelEffect = document.getElementById('panel').getAnimations({ subtree: true })
           .some((animation) => animation.animationName === 'bento-border-breathe'
             && animation.effect?.getTiming?.().iterations === Infinity);
@@ -1009,30 +965,25 @@ async function main() {
         appSurface.classList.add('collapsed');
         document.dispatchEvent(new CustomEvent('slate:modechange', { detail: { expanded: false } }));
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        const stoppedWhileCollapsed = canvas.dataset.effectRunning === 'false';
         appSurface.classList.remove('collapsed');
         appSurface.classList.add('expanded');
         document.dispatchEvent(new CustomEvent('slate:modechange', { detail: { expanded: true } }));
         return {
-          stoppedWhileExpandedIdle,
-          stoppedWhileCollapsed,
           hasInfinitePanelEffect,
           panelBackdropFilter,
         };
       })()
     `);
-    assert.equal(idlePerformanceAudit.stoppedWhileExpandedIdle, true, '首页静置时 WebGL 不得保留空转 RAF');
-    assert.equal(idlePerformanceAudit.stoppedWhileCollapsed, true, '收起后 WebGL 不得保留空转 RAF');
     assert.equal(idlePerformanceAudit.hasInfinitePanelEffect, false, '展开后不得运行大面积无限边框滤镜动画');
     assert.equal(idlePerformanceAudit.panelBackdropFilter, 'none', '近乎不透明的面板不得使用大面积实时背景模糊');
 
     const autoLayoutMotionAudit = await window.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['music', 'pomodoro', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         document.getElementById('tab-button-home').click();
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        const sizeButton = document.querySelector('[data-widget-size-cycle="music"]');
+        const sizeButton = document.querySelector('[data-widget-size-cycle="launcher"]');
         const beforeSize = sizeButton.dataset.currentSize;
         sizeButton.click();
         await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -1086,7 +1037,7 @@ async function main() {
     assert.ok(
       autoLayoutMotionAudit.tileDurations.length > 0
         && autoLayoutMotionAudit.tileDurations.every((duration) => duration >= 500 && duration <= 650),
-      'Auto Layout 应保留过程感，也不得拖沓'
+      `Auto Layout 应保留过程感，也不得拖沓：${JSON.stringify(autoLayoutMotionAudit.tileDurations)}`
     );
     assert.ok(autoLayoutMotionAudit.minimumTileOpacity >= 0.72, '重排期间真实卡片不得熄灭成黑块');
     assert.equal(autoLayoutMotionAudit.realTileHasScale, true, '真实卡片应恢复连续 FLIP 几何过渡');
@@ -1094,6 +1045,138 @@ async function main() {
     assert.equal(autoLayoutMotionAudit.tileAnimationsAfter, 0, '重排动画结束后不得残留组件动画');
     assert.equal(autoLayoutMotionAudit.rapidDuplicateGhosts, false, '连续切换必须先清理上一轮 Auto Layout ghost');
     assert.ok(autoLayoutMotionAudit.rapidMaxTileAnimations <= 1, '连续切换不得叠加多轮组件动画');
+
+    const launcherAudit = await window.webContents.executeJavaScript(`
+      (async () => {
+        const originalApi = window.slateAPI;
+        const grid = document.getElementById('launcher-grid');
+        const hint = document.getElementById('launcher-hint');
+        const addButton = document.getElementById('launcher-add');
+        const toastMessage = document.getElementById('status-toast-message');
+        const waitFor = async (predicate, timeout = 2000) => {
+          const startedAt = Date.now();
+          while (!predicate() && Date.now() - startedAt < timeout) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          return predicate();
+        };
+        const pickQueue = [];
+        const opened = [];
+        let openResult = { ok: true, activated: false };
+        window.slateAPI = {
+          chooseLauncherApp: async () => (pickQueue.length ? pickQueue.shift() : { ok: false, error: 'cancelled' }),
+          openLauncherApp: async (appPath) => { opened.push(appPath); return openResult; },
+          readLauncherIcon: async () => null,
+        };
+
+        const seededEmpty = {
+          itemCount: grid.children.length,
+          hintVisible: !hint.hidden,
+        };
+
+        pickQueue.push({ ok: true, app: { path: 'C:/Tools/alpha.exe', name: 'Alpha', icon: null } });
+        addButton.click();
+        const added = await waitFor(() => grid.children.length === 1);
+        const firstItem = grid.querySelector('.launcher-item');
+        const afterAdd = {
+          added,
+          itemCount: grid.children.length,
+          name: firstItem ? firstItem.querySelector('.launcher-name').textContent : null,
+          fallbackGlyph: firstItem ? firstItem.querySelector('.launcher-icon').textContent : null,
+          title: firstItem ? firstItem.title : null,
+          hintHidden: hint.hidden,
+        };
+
+        firstItem.click();
+        await waitFor(() => opened.length === 1);
+        const afterOpen = { opened: opened.slice() };
+
+        openResult = { ok: false, error: 'missing' };
+        firstItem.click();
+        await waitFor(() => (toastMessage.textContent || '').includes('找不到'));
+        const afterMissing = { toast: toastMessage.textContent };
+
+        openResult = { ok: true, activated: true };
+        firstItem.click();
+        await waitFor(() => (toastMessage.textContent || '').includes('已切到'));
+        const afterActivate = { toast: toastMessage.textContent };
+
+        pickQueue.push({ ok: true, app: { path: 'C:/Tools/alpha.exe', name: 'Alpha', icon: null } });
+        addButton.click();
+        await waitFor(() => (toastMessage.textContent || '').includes('已经在快速启动里'));
+        const afterDuplicate = { itemCount: grid.children.length, toast: toastMessage.textContent };
+
+        firstItem.querySelector('.launcher-remove').click();
+        await waitFor(() => grid.children.length === 0);
+        const afterRemove = {
+          itemCount: grid.children.length,
+          hintVisible: !hint.hidden,
+          toast: toastMessage.textContent,
+        };
+
+        window.slateAPI = originalApi;
+        return { seededEmpty, afterAdd, afterOpen, afterMissing, afterActivate, afterDuplicate, afterRemove };
+      })()
+    `);
+    assert.deepEqual(launcherAudit.seededEmpty, { itemCount: 0, hintVisible: true }, '快速启动空态应显示引导文案');
+    assert.deepEqual(launcherAudit.afterAdd, {
+      added: true,
+      itemCount: 1,
+      name: 'Alpha',
+      fallbackGlyph: 'A',
+      title: 'C:/Tools/alpha.exe',
+      hintHidden: true,
+    }, '添加软件后应渲染图标位、名称与路径提示');
+    assert.deepEqual(launcherAudit.afterOpen, { opened: ['C:/Tools/alpha.exe'] }, '点击软件应把路径交给主进程打开');
+    assert.equal(launcherAudit.afterMissing.toast, '找不到 Alpha，可能已被移动或卸载', '目标丢失时应给出可理解的提示');
+    assert.equal(launcherAudit.afterActivate.toast, '已切到 Alpha', '命中已运行实例时应提示切换');
+    assert.deepEqual(launcherAudit.afterDuplicate, { itemCount: 1, toast: 'Alpha 已经在快速启动里' }, '重复添加应被拦截且不产生重复项');
+    assert.deepEqual(launcherAudit.afterRemove, { itemCount: 0, hintVisible: true, toast: '已移除 Alpha' }, '移除后应回到空态并给出反馈');
+
+    // 首页时钟组件移除后，默认截止时间的跨日刷新曾随之失效：
+    // tickClock 在首行因缺少时钟元素而 return，把待办默认时间一起带走了。
+    const deadlineRolloverAudit = await window.webContents.executeJavaScript(`
+      (async () => {
+        const RealDate = window.Date;
+        // refreshKey 按天取值，假日期必须与真实当天错开，否则心跳不会重算。
+        let fakeNow = new RealDate(2027, 2, 9, 10, 0, 0, 0).getTime();
+        class FakeDate extends RealDate {
+          constructor(...args) {
+            if (args.length === 0) { super(fakeNow); } else { super(...args); }
+          }
+          static now() { return fakeNow; }
+        }
+        const trigger = document.querySelector('.todo-deadline-trigger[data-deadline-priority="P0"]');
+        if (!trigger) return { missingTrigger: true };
+        const expectedSame = new RealDate(2027, 2, 9, 23, 30, 0, 0).toISOString();
+        const expectedNext = new RealDate(2027, 2, 10, 23, 30, 0, 0).toISOString();
+        window.Date = FakeDate;
+        delete trigger.dataset.deadline;
+        delete trigger.dataset.deadlineSource;
+        const readDeadline = () => trigger.dataset.deadline || '';
+        const waitForDeadline = async (expected, timeout = 3000) => {
+          const startedAt = RealDate.now();
+          while (readDeadline() !== expected && RealDate.now() - startedAt < timeout) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          return readDeadline();
+        };
+        const sameDay = await waitForDeadline(expectedSame);
+        const sameDaySource = trigger.dataset.deadlineSource || '';
+        fakeNow = new RealDate(2027, 2, 10, 0, 5, 0, 0).getTime();
+        const nextDay = await waitForDeadline(expectedNext);
+        window.Date = RealDate;
+        return { missingTrigger: false, sameDay, sameDaySource, nextDay, expectedSame, expectedNext };
+      })()
+    `);
+    assert.equal(deadlineRolloverAudit.missingTrigger, false, '待办默认截止时间触发器必须存在');
+    assert.equal(deadlineRolloverAudit.sameDay, deadlineRolloverAudit.expectedSame, '当天创建应默认到当天 23:30');
+    assert.equal(deadlineRolloverAudit.sameDaySource, 'default', '默认截止时间必须标记为 default 而非 manual');
+    assert.equal(
+      deadlineRolloverAudit.nextDay,
+      deadlineRolloverAudit.expectedNext,
+      '跨日后默认截止时间必须自动滚到新的一天（曾因时钟组件移除而失效）'
+    );
     assert.equal(autoLayoutMotionAudit.rapidGhostsAfter, 0, '连续切换结束后不得残留 Auto Layout ghost');
   } finally {
     if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach();

@@ -54,7 +54,7 @@ const {
   createExclusiveAsyncTask,
 } = domain;
 
-const HOME_MODULES = ['music', 'pomodoro', 'recorder', 'windows', 'mirror', 'note', 'commands'];
+const HOME_MODULES = ['launcher', 'recorder', 'windows', 'mirror', 'note', 'commands'];
 
 test('an exclusive async task coalesces repeated starts until the first attempt settles', async () => {
   let release;
@@ -597,16 +597,16 @@ test('API credential statuses distinguish saved, missing, and legacy keys that n
 test('home layout swaps complete slot assignments without duplicates', () => {
   const defaults = {
     windows: 'tall-left',
-    clock: 'small-top',
+    launcher: 'small-top',
     recorder: 'medium-top',
     mirror: 'square-top',
     commands: 'tall-right',
     note: 'wide-bottom',
   };
   assert.deepEqual(normalizeHomeLayout({ windows: 'wide-bottom' }, defaults), defaults);
-  assert.deepEqual(swapHomeLayoutSlots(defaults, 'mirror', 'clock'), {
+  assert.deepEqual(swapHomeLayoutSlots(defaults, 'mirror', 'launcher'), {
     windows: 'tall-left',
-    clock: 'square-top',
+    launcher: 'square-top',
     recorder: 'medium-top',
     mirror: 'small-top',
     commands: 'tall-right',
@@ -632,7 +632,7 @@ test('todo category names migrate to work streams and reject blank edits', () =>
 
 test('home widget sizes keep the requested tile large and adapt siblings to the grid budget', () => {
   const defaults = {
-    character: 'small',
+    launcher: 'small',
     windows: 'large',
     recorder: 'medium',
     mirror: 'medium',
@@ -641,7 +641,7 @@ test('home widget sizes keep the requested tile large and adapt siblings to the 
   };
   assert.deepEqual(normalizeHomeWidgetSizes({ windows: 'huge' }, defaults, 'windows', 22), defaults);
   const fitted = normalizeHomeWidgetSizes({
-    character: 'large',
+    launcher: 'large',
     windows: 'large',
     recorder: 'large',
     mirror: 'large',
@@ -654,13 +654,12 @@ test('home widget sizes keep the requested tile large and adapt siblings to the 
 
 test('home widget sizes fill the complete bento capacity without blank cells', () => {
   const defaults = {
-    music: 'medium',
     windows: 'large',
     recorder: 'small',
+    launcher: 'medium',
     mirror: 'medium',
     note: 'medium',
-    commands: 'mini',
-    pomodoro: 'mini',
+    commands: 'small',
   };
   const area = { mini: 2, small: 4, medium: 8, large: 16 };
   const fitted = normalizeHomeWidgetSizes({ ...defaults, mirror: 'large' }, defaults, 'mirror', 48);
@@ -669,15 +668,14 @@ test('home widget sizes fill the complete bento capacity without blank cells', (
 });
 
 test('home widget packing fills all four rows even when logical order would fragment the grid', () => {
-  const order = ['recorder', 'windows', 'commands', 'mirror', 'music', 'note', 'pomodoro'];
+  const order = ['recorder', 'windows', 'commands', 'mirror', 'launcher', 'note'];
   const sizes = {
     recorder: 'small',
     windows: 'large',
-    commands: 'mini',
+    commands: 'small',
     mirror: 'medium',
-    music: 'medium',
+    launcher: 'medium',
     note: 'medium',
-    pomodoro: 'mini',
   };
   const layout = packHomeWidgetLayout(order, sizes, 12, 4);
   assert.ok(layout);
@@ -696,18 +694,18 @@ test('home widget packing fills all four rows even when logical order would frag
 
 test('hidden homepage modules are deduplicated and normalized to module order', () => {
   assert.deepEqual(
-    normalizeHiddenHomeModules(['mirror', 'unknown', 'mirror', 'music'], HOME_MODULES),
-    ['music', 'mirror']
+    normalizeHiddenHomeModules(['mirror', 'unknown', 'mirror', 'launcher'], HOME_MODULES),
+    ['launcher', 'mirror']
   );
   assert.deepEqual(normalizeHiddenHomeModules('mirror', HOME_MODULES), []);
   assert.deepEqual(normalizeHiddenHomeModules([...HOME_MODULES], HOME_MODULES), []);
 });
 
 test('homepage visibility refuses to hide the final visible module', () => {
-  const sixHidden = HOME_MODULES.slice(0, 6);
+  const fiveHidden = HOME_MODULES.slice(0, 5);
   assert.deepEqual(
-    updateHomeModuleVisibility(sixHidden, HOME_MODULES, 'commands', false),
-    { ok: false, error: 'at_least_one_required', hiddenIds: sixHidden }
+    updateHomeModuleVisibility(fiveHidden, HOME_MODULES, 'commands', false),
+    { ok: false, error: 'at_least_one_required', hiddenIds: fiveHidden }
   );
   assert.deepEqual(
     updateHomeModuleVisibility(['mirror'], HOME_MODULES, 'mirror', true),
@@ -720,10 +718,10 @@ test('homepage visibility refuses to hide the final visible module', () => {
 });
 
 test('every non-empty homepage widget subset exactly covers the bento grid', () => {
-  const order = ['music', 'pomodoro', 'windows', 'recorder', 'mirror', 'note', 'commands'];
+  const order = ['windows', 'recorder', 'launcher', 'mirror', 'note', 'commands'];
   const sizes = {
-    music: 'medium', pomodoro: 'mini', windows: 'large', recorder: 'small',
-    mirror: 'medium', note: 'medium', commands: 'mini',
+    windows: 'large', recorder: 'small', launcher: 'medium',
+    mirror: 'medium', note: 'medium', commands: 'small',
   };
   for (let visibleMask = 1; visibleMask < 2 ** order.length; visibleMask += 1) {
     const hiddenIds = order.filter((id, index) => (visibleMask & (1 << index)) === 0);
@@ -736,12 +734,12 @@ test('every non-empty homepage widget subset exactly covers the bento grid', () 
 });
 
 test('five-widget layout chooses the largest preference and breaks ties by saved order', () => {
-  const order = ['music', 'pomodoro', 'windows', 'recorder', 'mirror', 'note', 'commands'];
+  const order = ['windows', 'recorder', 'launcher', 'mirror', 'note', 'commands'];
   const sizes = {
-    music: 'medium', pomodoro: 'mini', windows: 'large', recorder: 'small',
+    windows: 'large', recorder: 'small', launcher: 'medium',
     mirror: 'large', note: 'medium', commands: 'mini',
   };
-  const layout = resolveHomeWidgetLayout(order, sizes, ['pomodoro', 'commands'], 12, 4);
+  const layout = resolveHomeWidgetLayout(order, sizes, ['commands'], 12, 4);
   assert.deepEqual(layout.placements.windows, { column: 0, row: 0, width: 4, height: 4 });
   assert.equal(layout.variants.windows, 'tall');
 });
@@ -756,27 +754,27 @@ test('layout variants reflect actual rectangles instead of saved preferences', (
 
 test('home layout validation rejects every incomplete or unsafe shape', () => {
   const valid = resolveHomeWidgetLayout(
-    ['music', 'windows'],
-    { music: 'large', windows: 'large' },
+    ['launcher', 'windows'],
+    { launcher: 'large', windows: 'large' },
     [],
     12,
     4
   );
-  assert.equal(validateHomeWidgetLayout(valid, ['music', 'windows'], 12, 4), true);
-  assert.equal(validateHomeWidgetLayout(null, ['music'], 12, 4), false);
-  assert.equal(validateHomeWidgetLayout({ placements: {} }, ['music'], 12, 4), false);
+  assert.equal(validateHomeWidgetLayout(valid, ['launcher', 'windows'], 12, 4), true);
+  assert.equal(validateHomeWidgetLayout(null, ['launcher'], 12, 4), false);
+  assert.equal(validateHomeWidgetLayout({ placements: {} }, ['launcher'], 12, 4), false);
   assert.equal(validateHomeWidgetLayout({
-    placements: { music: { column: 0, row: 0, width: 12, height: 3 } },
-  }, ['music'], 12, 4), false);
+    placements: { launcher: { column: 0, row: 0, width: 12, height: 3 } },
+  }, ['launcher'], 12, 4), false);
   assert.equal(validateHomeWidgetLayout({
-    placements: { music: { column: 0, row: 0, width: 12.5, height: 4 } },
-  }, ['music'], 12, 4), false);
+    placements: { launcher: { column: 0, row: 0, width: 12.5, height: 4 } },
+  }, ['launcher'], 12, 4), false);
   assert.equal(validateHomeWidgetLayout({
     placements: {
-      music: { column: 0, row: 0, width: 8, height: 4 },
+      launcher: { column: 0, row: 0, width: 8, height: 4 },
       windows: { column: 6, row: 0, width: 6, height: 4 },
     },
-  }, ['music', 'windows'], 12, 4), false);
+  }, ['launcher', 'windows'], 12, 4), false);
 });
 
 test('audio level returns stable RMS volume for recording strands', () => {

@@ -833,10 +833,11 @@
     const visibleOrder = ids.filter((id) => !hidden.has(id));
     if (!visibleOrder.length) return null;
 
-    let placements;
-    if (visibleOrder.length === 7) {
-      placements = packHomeWidgetLayout(visibleOrder, sizes, columns, rows);
-    } else {
+    // 优先按尺寸偏好装箱，让用户调整过的组件尺寸真正生效；
+    // 只有尺寸组合铺不满网格时（模块少、偏好落在极端档位）才退回均分模板，
+    // 否则组件数量固定的那几档会出现「改了尺寸却看不出任何变化」。
+    let placements = packHomeWidgetLayout(visibleOrder, sizes, columns, rows);
+    if (!placements) {
       const template = HOME_GAPLESS_TEMPLATES[visibleOrder.length];
       if (!template) return null;
       let slotOrder = [...visibleOrder];

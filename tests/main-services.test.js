@@ -24,8 +24,6 @@ const {
   updateFeaturePreference,
   normalizeDefaultTabPreference,
   updateDefaultTabPreference,
-  controlSodaMusic,
-  sodaShortcutSpec,
   selectTranscriptionSettings,
   createWorkspacePersistenceGate,
   hoverSpacePollingPolicy,
@@ -572,81 +570,4 @@ test('default panel tab accepts visible tabs and falls back to home safely', () 
     defaultTab: 'todo',
   });
   assert.equal(updateDefaultTabPreference({ features }, 'notes'), null);
-});
-
-test('first Soda Music play launches the app and starts its restored song', async () => {
-  const events = [];
-  let running = false;
-  const result = await controlSodaMusic('play', {
-    isRunning: async () => {
-      events.push('running');
-      return running;
-    },
-    launch: async () => {
-      events.push('launch');
-      running = true;
-      return true;
-    },
-    sendShortcut: async (action) => {
-      events.push(`shortcut:${action}`);
-      return { ok: true };
-    },
-    sleep: async () => {},
-  });
-
-  assert.deepEqual(events, ['running', 'launch', 'running', 'shortcut:play']);
-  assert.equal(result.ok, true);
-  assert.equal(result.running, true);
-  assert.equal(result.playing, true);
-  assert.equal(result.bootstrapped, true);
-});
-
-test('running Soda Music uses its own shortcuts because native media status can stay empty', async () => {
-  const events = [];
-  const result = await controlSodaMusic('play', {
-    isRunning: async () => true,
-    launch: async () => {
-      events.push('launch');
-      return true;
-    },
-    sendShortcut: async (action) => {
-      events.push(`shortcut:${action}`);
-      return { ok: true };
-    },
-    sleep: async () => {},
-  });
-
-  assert.deepEqual(events, ['shortcut:play']);
-  assert.equal(result.ok, true);
-  assert.equal(result.playing, true);
-  assert.equal(result.bootstrapped, false);
-});
-
-test('Soda Music pause and track navigation preserve explicit playback state', async () => {
-  const shortcuts = [];
-  const dependencies = {
-    isRunning: async () => true,
-    launch: async () => true,
-    sendShortcut: async (action) => {
-      shortcuts.push(action);
-      return { ok: true };
-    },
-    sleep: async () => {},
-  };
-
-  assert.equal((await controlSodaMusic('pause', dependencies)).playing, false);
-  assert.equal((await controlSodaMusic('next', dependencies, false)).playing, true);
-  assert.equal((await controlSodaMusic('previous', dependencies, false)).playing, true);
-  assert.deepEqual(shortcuts, ['pause', 'next', 'previous']);
-});
-
-test('Soda Music play uses the play/pause toggle instead of the next-track key', () => {
-  // play 曾经和 next 撞成同一个键（Cmd+Right），点播放实际是切歌、歌不会开始播。
-  // Space 是播放/暂停切换键，play 与 pause 共用它，next / previous 必须与之不同。
-  assert.deepEqual(sodaShortcutSpec('play'), { keyCode: 49, command: false, dismissOverlays: true });
-  assert.deepEqual(sodaShortcutSpec('pause'), { keyCode: 49, command: false, dismissOverlays: true });
-  assert.deepEqual(sodaShortcutSpec('next'), { keyCode: 124, command: true, dismissOverlays: true });
-  assert.deepEqual(sodaShortcutSpec('previous'), { keyCode: 123, command: true, dismissOverlays: true });
-  assert.notDeepEqual(sodaShortcutSpec('play'), sodaShortcutSpec('next'));
-  assert.equal(sodaShortcutSpec('invalid'), null);
 });

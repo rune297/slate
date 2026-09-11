@@ -2275,78 +2275,151 @@
   });
   document.addEventListener('slate:recording-state-changed', renderHomeModuleSettings);
 
-  // ============ 本地汽水音乐 ============
-  const homeMusic = document.getElementById('home-music');
-  const musicArtwork = document.getElementById('music-artwork');
-  const musicTitle = document.getElementById('music-title');
-  const musicStatus = document.getElementById('music-status');
-  const musicPlayToggle = document.getElementById('music-play-toggle');
-  let musicPlaying = false;
+  // ============ 首页 · 快速启动 ============
+  // 自定义常用软件：点图标直接打开；已在运行的实例会被带回前台。
+  const LAUNCHER_APPS_KEY = 'slate-launcher-apps-v1';
+  const launcherGrid = document.getElementById('launcher-grid');
+  const launcherHint = document.getElementById('launcher-hint');
+  const launcherAdd = document.getElementById('launcher-add');
+  let launcherApps = loadJson(LAUNCHER_APPS_KEY, [])
+    .filter((item) => item && typeof item === 'object' && typeof item.path === 'string' && item.path.trim())
+    .map((item) => ({
+      path: item.path,
+      name: typeof item.name === 'string' && item.name.trim() ? item.name : '未命名',
+      icon: typeof item.icon === 'string' && item.icon ? item.icon : null,
+    }));
+  let launcherBusy = false;
 
-  function renderMusicPlaybackState() {
-    if (!homeMusic || !musicPlayToggle) return;
-    homeMusic.classList.toggle('music-playing', musicPlaying);
-    musicPlayToggle.dataset.musicAction = musicPlaying ? 'pause' : 'play';
-    musicPlayToggle.setAttribute('aria-label', musicPlaying ? '暂停' : '播放');
-    musicPlayToggle.innerHTML = musicPlaying
-      ? '<svg viewBox="0 0 24 24"><path d="M8 7h3v10H8zM14 7h3v10h-3z" /></svg>'
-      : '<svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z" /></svg>';
+  function persistLauncherApps() {
+    saveJson(LAUNCHER_APPS_KEY, launcherApps);
   }
 
-  async function refreshMusicStatus() {
-    if (!homeMusic || !window.slateAPI || typeof window.slateAPI.getMusicStatus !== 'function') return;
-    let status;
-    try { status = await window.slateAPI.getMusicStatus(); } catch (error) { status = null; }
-    homeMusic.classList.toggle('music-running', Boolean(status && status.running));
-    if (status && typeof status.playing === 'boolean') {
-      musicPlaying = status.playing;
-      renderMusicPlaybackState();
-    }
-    if (status && status.icon && musicArtwork) {
-      musicArtwork.replaceChildren();
-      const image = document.createElement('img');
-      image.src = status.icon;
-      image.alt = '';
-      musicArtwork.appendChild(image);
-    }
-    if (musicTitle) musicTitle.textContent = status && status.installed ? '汽水音乐' : '未安装汽水音乐';
-    if (musicStatus) musicStatus.textContent = status && status.running ? (musicPlaying ? '正在播放' : '已连接') : status && status.installed ? '轻触即播' : '需要本地客户端';
+  function notifyLauncher(message) {
+    if (typeof showStatusToast === 'function') showStatusToast(message);
   }
 
-  homeMusic?.addEventListener('click', async (event) => {
-    if (event.target.closest('[data-widget-size-cycle]') || !window.slateAPI) return;
-    const control = event.target.closest('[data-music-action]') || musicPlayToggle;
-    if (!control) return;
-    event.stopPropagation();
-    control.disabled = true;
-    const action = control.dataset.musicAction;
-    let result;
-    try { result = await window.slateAPI.controlMusic(action); } catch (error) { result = { ok: false }; }
-    control.disabled = false;
-    if (!result || !result.ok) {
-      const needsSession = result && ['no_active_session', 'soda_session_inactive'].includes(result.error);
-      const needsPermission = result && result.error === 'accessibility_permission_required';
-      if (musicStatus) musicStatus.textContent = result && result.error === 'not_installed'
-        ? '需要本地客户端'
-        : needsPermission ? '需要辅助功能权限'
-          : needsSession ? '请先点播放' : '控制暂不可用';
-      if (typeof showStatusToast === 'function') {
-        showStatusToast(result && result.error === 'not_installed'
-          ? '未安装汽水音乐'
-          : needsPermission ? '请在系统设置中允许 Slate 使用辅助功能'
-            : needsSession ? '请先点击播放，再使用切歌控制' : '汽水音乐控制暂不可用');
+  function renderLauncher() {
+    if (!launcherGrid) return;
+    launcherGrid.replaceChildren();
+    if (launcherHint) launcherHint.hidden = launcherApps.length > 0;
+    launcherApps.forEach((app, index) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'launcher-item';
+      item.dataset.launcherIndex = String(index);
+      item.title = app.path;
+      item.setAttribute('aria-label', `打开 ${app.name}`);
+
+      const icon = document.createElement('span');
+      icon.className = 'launcher-icon';
+      if (app.icon) {
+        const image = document.createElement('img');
+        image.src = app.icon;
+        image.alt = '';
+        image.draggable = false;
+        icon.appendChild(image);
+      } else {
+        icon.textContent = (app.name || '?').trim().slice(0, 1).toUpperCase() || '?';
       }
-    } else {
-      if (typeof result.playing === 'boolean') musicPlaying = result.playing;
-      else if (action === 'play') musicPlaying = true;
-      else if (action === 'pause') musicPlaying = false;
-      renderMusicPlaybackState();
-      if (musicStatus) musicStatus.textContent = action === 'next' ? '下一首' : action === 'previous' ? '上一首' : musicPlaying ? '正在播放' : '已暂停';
+
+      const label = document.createElement('span');
+      label.className = 'launcher-name';
+      label.textContent = app.name;
+
+      const remove = document.createElement('span');
+      remove.className = 'launcher-remove';
+      remove.dataset.launcherRemove = String(index);
+      remove.setAttribute('role', 'button');
+      remove.setAttribute('aria-label', `移除 ${app.name}`);
+      remove.textContent = '×';
+
+      item.append(icon, label, remove);
+      launcherGrid.appendChild(item);
+    });
+  }
+
+  launcherGrid?.addEventListener('click', async (event) => {
+    const removeButton = event.target.closest('[data-launcher-remove]');
+    if (removeButton) {
+      event.stopPropagation();
+      event.preventDefault();
+      const index = Number(removeButton.dataset.launcherRemove);
+      const removed = launcherApps[index];
+      launcherApps = launcherApps.filter((item, position) => position !== index);
+      persistLauncherApps();
+      renderLauncher();
+      if (removed) notifyLauncher(`已移除 ${removed.name}`);
+      return;
     }
-    setTimeout(refreshMusicStatus, 500);
+
+    const item = event.target.closest('[data-launcher-index]');
+    if (!item || launcherBusy) return;
+    const app = launcherApps[Number(item.dataset.launcherIndex)];
+    if (!app || typeof window.slateAPI?.openLauncherApp !== 'function') return;
+    launcherBusy = true;
+    item.classList.add('launcher-opening');
+    let result = null;
+    try {
+      result = await window.slateAPI.openLauncherApp(app.path);
+    } catch (error) {
+      result = null;
+    }
+    launcherBusy = false;
+    item.classList.remove('launcher-opening');
+    if (!result || !result.ok) {
+      notifyLauncher(result && result.error === 'missing'
+        ? `找不到 ${app.name}，可能已被移动或卸载`
+        : `无法打开 ${app.name}`);
+      return;
+    }
+    if (result.activated) notifyLauncher(`已切到 ${app.name}`);
   });
 
-  renderMusicPlaybackState();
+  launcherAdd?.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    if (typeof window.slateAPI?.chooseLauncherApp !== 'function') return;
+    let result = null;
+    try {
+      result = await window.slateAPI.chooseLauncherApp();
+    } catch (error) {
+      result = null;
+    }
+    if (!result || !result.ok || !result.app) return;
+    const picked = result.app;
+    if (launcherApps.some((item) => item.path === picked.path)) {
+      notifyLauncher(`${picked.name} 已经在快速启动里`);
+      return;
+    }
+    launcherApps = [...launcherApps, { path: picked.path, name: picked.name, icon: picked.icon || null }];
+    persistLauncherApps();
+    renderLauncher();
+  });
+
+  renderLauncher();
+
+  // 旧记录或首次读取失败时，补一次系统图标。
+  if (launcherApps.some((app) => !app.icon) && typeof window.slateAPI?.readLauncherIcon === 'function') {
+    (async () => {
+      let changed = false;
+      for (const app of launcherApps) {
+        if (app.icon) continue;
+        let icon = null;
+        try {
+          icon = await window.slateAPI.readLauncherIcon(app.path);
+        } catch (error) {
+          icon = null;
+        }
+        if (icon) {
+          app.icon = icon;
+          changed = true;
+        }
+      }
+      if (changed) {
+        persistLauncherApps();
+        renderLauncher();
+      }
+    })();
+  }
 
   // ============ 本机加密密钥库 ============
   const credentialService = document.getElementById('credential-service');
@@ -2660,7 +2733,6 @@
   updateRecordingUi();
   loadTranscriptionConfig();
   refreshSettingsPanel();
-  refreshMusicStatus();
   loadCredentials();
 
   window.SlateWorkspace = {

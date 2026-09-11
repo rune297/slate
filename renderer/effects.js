@@ -1,7 +1,6 @@
 /*
  * Slate visual effects.
- * The music shader is adapted from the open-source Vue Bits Color Bends
- * component and rewritten for the app's dependency-free renderer.
+ * Dependency-free WebGL effects for the home widgets and list highlights.
  */
 (function bootstrapPanelEffects() {
   'use strict';
@@ -17,95 +16,6 @@
     void main() {
       vUv = aPosition * 0.5 + 0.5;
       gl_Position = vec4(aPosition, 0.0, 1.0);
-    }
-  `;
-
-  const COLOR_BENDS_SHADER = `
-    precision highp float;
-    #define MAX_COLORS 8
-    uniform vec2 uCanvas;
-    uniform float uTime;
-    uniform float uSpeed;
-    uniform vec2 uRot;
-    uniform int uColorCount;
-    uniform vec3 uColors[MAX_COLORS];
-    uniform int uTransparent;
-    uniform float uScale;
-    uniform float uFrequency;
-    uniform float uWarpStrength;
-    uniform vec2 uPointer;
-    uniform float uMouseInfluence;
-    uniform float uParallax;
-    uniform float uNoise;
-    uniform int uIterations;
-    uniform float uIntensity;
-    uniform float uBandWidth;
-    varying vec2 vUv;
-
-    void main() {
-      float t = uTime * uSpeed;
-      vec2 p = vUv * 2.0 - 1.0;
-      p += uPointer * uParallax * 0.1;
-      vec2 rp = vec2(p.x * uRot.x - p.y * uRot.y, p.x * uRot.y + p.y * uRot.x);
-      vec2 q = vec2(rp.x * (uCanvas.x / uCanvas.y), rp.y);
-      q /= max(uScale, 0.0001);
-      q /= 0.5 + 0.2 * dot(q, q);
-      q += 0.2 * cos(t) - 7.56;
-      q += (uPointer - rp) * uMouseInfluence * 0.2;
-
-      for (int j = 0; j < 5; j++) {
-        if (j >= uIterations - 1) break;
-        vec2 rr = sin(1.5 * (q.yx * uFrequency) + 2.0 * cos(q * uFrequency));
-        q += (rr - q) * 0.15;
-      }
-
-      vec3 col = vec3(0.0);
-      float a = 1.0;
-      if (uColorCount > 0) {
-        vec2 s = q;
-        vec3 sumCol = vec3(0.0);
-        float cover = 0.0;
-        for (int i = 0; i < MAX_COLORS; ++i) {
-          if (i >= uColorCount) break;
-          s -= 0.01;
-          vec2 r = sin(1.5 * (s.yx * uFrequency) + 2.0 * cos(s * uFrequency));
-          float m0 = length(r + sin(5.0 * r.y * uFrequency - 3.0 * t + float(i)) / 4.0);
-          float kBelow = clamp(uWarpStrength, 0.0, 1.0);
-          float kMix = pow(kBelow, 0.3);
-          float gain = 1.0 + max(uWarpStrength - 1.0, 0.0);
-          vec2 warped = s + (r - s) * kBelow * gain;
-          float m1 = length(warped + sin(5.0 * warped.y * uFrequency - 3.0 * t + float(i)) / 4.0);
-          float m = mix(m0, m1, kMix);
-          float w = 1.0 - exp(-uBandWidth / exp(uBandWidth * m));
-          sumCol += uColors[i] * w;
-          cover = max(cover, w);
-        }
-        col = clamp(sumCol, 0.0, 1.0);
-        a = uTransparent > 0 ? cover : 1.0;
-      } else {
-        vec2 s = q;
-        for (int k = 0; k < 3; ++k) {
-          s -= 0.01;
-          vec2 r = sin(1.5 * (s.yx * uFrequency) + 2.0 * cos(s * uFrequency));
-          float m0 = length(r + sin(5.0 * r.y * uFrequency - 3.0 * t + float(k)) / 4.0);
-          float kBelow = clamp(uWarpStrength, 0.0, 1.0);
-          float kMix = pow(kBelow, 0.3);
-          float gain = 1.0 + max(uWarpStrength - 1.0, 0.0);
-          vec2 warped = s + (r - s) * kBelow * gain;
-          float m1 = length(warped + sin(5.0 * warped.y * uFrequency - 3.0 * t + float(k)) / 4.0);
-          float m = mix(m0, m1, kMix);
-          col[k] = 1.0 - exp(-uBandWidth / exp(uBandWidth * m));
-        }
-        a = uTransparent > 0 ? max(max(col.r, col.g), col.b) : 1.0;
-      }
-
-      col *= uIntensity;
-      if (uNoise > 0.0001) {
-        float n = fract(sin(dot(gl_FragCoord.xy + vec2(uTime), vec2(12.9898, 78.233))) * 43758.5453123);
-        col = clamp(col + (n - 0.5) * uNoise, 0.0, 1.0);
-      }
-      vec3 rgb = uTransparent > 0 ? col * a : col;
-      gl_FragColor = vec4(rgb, a);
     }
   `;
 
@@ -392,6 +302,7 @@
     syncActivity();
 
     return {
+      homeModule: configure.homeModule || null,
       redraw: () => { if (effectEnabled) syncActivity(); },
       setEnabled(enabled) {
         const next = enabled === true;
@@ -415,42 +326,6 @@
       },
     };
   }
-
-  const musicEffect = createWebglEffect(
-    document.getElementById('music-color-bends'),
-    COLOR_BENDS_SHADER,
-    {
-      setup({ gl, uniform }) {
-        gl.uniform1f(uniform('uSpeed'), 0.59);
-        gl.uniform1i(uniform('uColorCount'), 0);
-        gl.uniform1i(uniform('uTransparent'), 1);
-        gl.uniform1f(uniform('uScale'), 1);
-        gl.uniform1f(uniform('uFrequency'), 1);
-        gl.uniform1f(uniform('uWarpStrength'), 1);
-        gl.uniform1f(uniform('uMouseInfluence'), 1);
-        gl.uniform1f(uniform('uParallax'), 0.5);
-        gl.uniform1f(uniform('uNoise'), 0.15);
-        gl.uniform1i(uniform('uIterations'), 1);
-        gl.uniform1f(uniform('uIntensity'), 1.5);
-        gl.uniform1f(uniform('uBandWidth'), 6);
-      },
-      frame({ gl, uniform, pointer }, time, size) {
-        pointer.x += (pointer.tx - pointer.x) * 0.08;
-        pointer.y += (pointer.ty - pointer.y) * 0.08;
-        const rotation = (90 - time) * Math.PI / 180;
-        gl.uniform2f(uniform('uCanvas'), size.width, size.height);
-        gl.uniform1f(uniform('uTime'), time);
-        gl.uniform2f(uniform('uRot'), Math.cos(rotation), Math.sin(rotation));
-        gl.uniform2f(uniform('uPointer'), pointer.x, pointer.y);
-      },
-    }
-  );
-  if (musicEffect) effectInstances.push(musicEffect);
-  const syncHomeEffectVisibility = (event) => {
-    const visibleIds = event.detail?.visibleIds;
-    if (Array.isArray(visibleIds)) musicEffect?.setEnabled(visibleIds.includes('music'));
-  };
-  document.addEventListener('slate:home-modules-changed', syncHomeEffectVisibility);
 
   const LINE_LISTS = [
     ['#tab-todo .todo-list', '.todo-item'],
@@ -533,6 +408,19 @@
       });
     });
   }
+
+  // 首页组件被隐藏后，只服务于该组件的渲染循环必须立刻停下，
+  // 否则隐藏的组件会继续占着 GPU 与 RAF。归属由创建时声明的 homeModule 决定，
+  // 这样以后新增首页特效不需要再各写一份同步逻辑。
+  const syncHomeEffectVisibility = (event) => {
+    const visibleIds = event.detail?.visibleIds;
+    if (!Array.isArray(visibleIds)) return;
+    effectInstances.forEach((effect) => {
+      if (!effect.homeModule) return;
+      effect.setEnabled(visibleIds.includes(effect.homeModule));
+    });
+  };
+  document.addEventListener('slate:home-modules-changed', syncHomeEffectVisibility);
 
   decorateLineLists();
   const listObserver = new MutationObserver(decorateLineLists);
