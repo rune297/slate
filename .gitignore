@@ -1,0 +1,24 @@
+.DS_Store
+node_modules/
+dist/
+dist.noindex/
+*.log
+*.tmp
+.vscode/settings.json
+.idea/
+.cache/
+coverage/
+.worktrees/
+*.swp
+
+# 本地运行数据与密钥（绝不入库）
+data/
+userdata/
+recordings/
+*.vault.json
+credentials.vault.json
+dismiss-debug.log
+
+.env
+.env.*
+!.env.example
