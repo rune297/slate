@@ -1,5 +1,4 @@
 const STORAGE_KEY = 'slate-todo-data';
-const PRIORITIES = ['P0', 'P1', 'P2', 'P3'];
 const TODO_CATEGORY_KEY = 'slate-todo-category-names-v1';
 const TODO_CATEGORY_DEFAULTS = {
   P0: '课程',
@@ -7,6 +6,10 @@ const TODO_CATEGORY_DEFAULTS = {
   P2: 'Vibe coding',
   P3: '日常',
 };
+// 分类列表动态化：默认 4 个，可增删。id 稳定（存储桶键），名字可改。
+let PRIORITIES = ['P0', 'P1', 'P2', 'P3'];
+// 分类圆点调色板（按序取色，新增分类自动获得颜色）
+const CATEGORY_COLORS = ['#d84038', '#e07a2e', '#1d9e63', '#2f6fdb', '#8a5cd6', '#0f8a8a', '#b8860b'];
 
 // 存储键在重命名后统一为 slate-*，这里把历史 notch-* 数据搬过来，老用户不丢数据。
 function migrateLegacyStorageKeys() {
@@ -146,16 +149,15 @@ window.addEventListener('beforeunload', () => dismissStatusToast(true));
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { P0: [], P1: [], P2: [], P3: [] };
-    const parsed = JSON.parse(raw);
-    return {
-      P0: normalizeTodoItems(parsed && parsed.P0),
-      P1: normalizeTodoItems(parsed && parsed.P1),
-      P2: normalizeTodoItems(parsed && parsed.P2),
-      P3: normalizeTodoItems(parsed && parsed.P3),
-    };
+    const result = {};
+    PRIORITIES.forEach((bucket) => {
+      result[bucket] = raw ? normalizeTodoItems(JSON.parse(raw)[bucket]) : [];
+    });
+    return result;
   } catch (e) {
-    return { P0: [], P1: [], P2: [], P3: [] };
+    const result = {};
+    PRIORITIES.forEach((bucket) => { result[bucket] = []; });
+    return result;
   }
 }
 
@@ -209,12 +211,17 @@ let todoTag = 'all';
 
 function loadTodoCategoryNames() {
   try {
-    return window.SlateDomain.normalizeTodoCategoryNames(
-      JSON.parse(localStorage.getItem(TODO_CATEGORY_KEY) || 'null'),
-      TODO_CATEGORY_DEFAULTS
-    );
+    const source = JSON.parse(localStorage.getItem(TODO_CATEGORY_KEY) || 'null') || {};
+    const out = {};
+    PRIORITIES.forEach((id) => {
+      const raw = String(source[id] || '').replace(/\s+/g, ' ').trim();
+      out[id] = (raw || TODO_CATEGORY_DEFAULTS[id] || id).slice(0, 24);
+    });
+    return out;
   } catch (error) {
-    return { ...TODO_CATEGORY_DEFAULTS };
+    const out = {};
+    PRIORITIES.forEach((id) => { out[id] = TODO_CATEGORY_DEFAULTS[id] || id; });
+    return out;
   }
 }
 
@@ -227,11 +234,7 @@ function persistTodoCategoryNames() {
 }
 
 function applyTodoCategoryNames() {
-  PRIORITIES.forEach((categoryId) => {
-    const name = todoCategoryNames[categoryId];
-    const input = document.querySelector(`.todo-category-name[data-category="${categoryId}"]`);
-    if (input) input.value = name;
-  });
+  if (typeof renderTodoRail === 'function') renderTodoRail();
   if (typeof applyQuickCategoryNames === 'function') applyQuickCategoryNames();
 }
 if (window.slateAPI && typeof window.slateAPI.scheduleTodoReminders === 'function') {
@@ -287,24 +290,21 @@ function todoItemHtml(bucket, item) {
     }).format(new Date(item.deadline))
     : '';
   const toggleLabel = item.done ? `恢复未完成：${safeText}` : `标记完成：${safeText}`;
-  const battery = window.SlateDomain.todoTimeBattery(item, Date.now());
-  // 逾期项整条填满红色并只显示一个白色感叹号：剩余 0% 是「快到了」，
-  // 逾期是「已经欠账」，两者不能长得一样。
-  const batteryHtml = battery
-    ? `<span class="todo-battery" data-tone="${battery.tone}"${battery.overdue ? ' data-overdue="true" role="img"' : ''} title="${battery.label}" aria-label="${battery.label}"><i style="--battery:${battery.overdue ? 100 : battery.percent}%"></i><b>${battery.overdue ? '!' : `${battery.percent}%`}</b></span>`
-    : '';
+  // 到期状态用文字徽标（剩余时间/已过期）替代百分比进度条——新手一眼能懂。
+  const due = window.SlateDomain.todoDueChip(item, Date.now());
+  const dueChip = due ? `<span class="todo-due" data-tone="${due.tone}">${escapeHtml(due.label)}</span>` : '';
   const categoryName = todoCategoryNames[bucket] || bucket;
   const categoryChip = todoView === 'done'
     ? ''
     : `<button class="todo-cat-chip" type="button" data-action="cycle-cat" data-bucket="${bucket}" title="点击切换分类">${escapeHtml(categoryName)}</button>`;
-  const pinLabel = item.pinnedToday ? '移出今天' : '加入今天';
+  const pinLabel = item.pinnedToday ? '退出今天' : '加入今天';
   const pinButton = item.done
     ? ''
-    : `<button class="todo-pin${item.pinnedToday ? ' pinned' : ''}" type="button" data-action="pin" aria-label="${pinLabel}：${safeText}" aria-pressed="${item.pinnedToday === true}"><span>今天</span></button>`;
+    : `<button class="todo-pin${item.pinnedToday ? ' pinned' : ''}" type="button" data-action="pin" aria-label="${pinLabel}：${safeText}" title="${pinLabel}：让这条待办出现在「今天」视图" aria-pressed="${item.pinnedToday === true}"><span>${item.pinnedToday ? '已在今天' : '加入今天'}</span></button>`;
   const isEditing = editingTodo?.id === item.id;
   const contentHtml = isEditing
-    ? `<div class="todo-inline-editor"><input class="todo-inline-name" value="${safeText}" maxlength="80" aria-label="修改待办名称" />${batteryHtml}<button class="todo-inline-deadline" type="button" data-action="edit-deadline">${deadline || '日期'}</button><button class="todo-inline-save" type="button" data-action="save-edit" aria-label="保存修改">✓</button></div>`
-    : `<button class="todo-copy" type="button" data-action="edit" title="${safeText}" aria-label="修改：${safeText}"><span class="todo-text">${safeText}</span>${batteryHtml}${deadline ? `<time class="todo-ddl" datetime="${escapeHtml(item.deadline)}">${escapeHtml(deadline)}</time>` : ''}</button>`;
+    ? `<div class="todo-inline-editor"><input class="todo-inline-name" value="${safeText}" maxlength="80" aria-label="修改待办名称" />${dueChip}<button class="todo-inline-deadline" type="button" data-action="edit-deadline">${deadline || '日期'}</button><button class="todo-inline-save" type="button" data-action="save-edit" aria-label="保存修改">✓</button></div>`
+    : `<button class="todo-copy" type="button" data-action="edit" title="${safeText}" aria-label="修改：${safeText}"><span class="todo-text">${safeText}</span>${dueChip}${deadline ? `<time class="todo-ddl" datetime="${escapeHtml(item.deadline)}">${escapeHtml(deadline)}</time>` : ''}</button>`;
   return `
     <li class="todo-item${doneClass}${selectedClass}" data-id="${safeId}" data-priority="${bucket}">
       <button class="checkbox" type="button" data-action="toggle" aria-label="${toggleLabel}" aria-pressed="${item.done}">${checkSvg()}</button>
@@ -1033,27 +1033,192 @@ function initTab() {
   setActiveTab('home');
 }
 
-document.querySelectorAll('.todo-category-name[data-category]').forEach((input) => {
-  const finishCategoryEdit = () => {
-    const categoryId = input.dataset.category;
-    todoCategoryNames = window.SlateDomain.normalizeTodoCategoryNames({
-      ...todoCategoryNames,
-      [categoryId]: input.value,
-    }, TODO_CATEGORY_DEFAULTS);
-    persistTodoCategoryNames();
+// ============ 分类栏（动态增删改名）============
+function persistTodoCategoryList() {
+  persistTodoCategoryNames();
+}
+
+function renderTodoRail() {
+  const host = document.getElementById('todo-rail-cats');
+  if (!host) return;
+  host.replaceChildren();
+  PRIORITIES.forEach((id) => {
+    const row = document.createElement('div');
+    row.className = 'todo-tag-row';
+    row.dataset.cat = id;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'todo-tag' + (todoTag === id ? ' is-active' : '');
+    button.dataset.tag = id;
+    button.title = '单击筛选 · 双击重命名';
+    const dot = document.createElement('i');
+    dot.className = 'dot';
+    dot.style.background = CATEGORY_COLORS[PRIORITIES.indexOf(id) % CATEGORY_COLORS.length];
+    dot.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.className = 'todo-tag-name';
+    name.textContent = todoCategoryNames[id] || id;
+    button.append(dot, name);
+
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.dataset.priority = id;
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'todo-tag-delete';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `删除分类：${todoCategoryNames[id] || id}`);
+    remove.title = '删除分类（需先清空其中的待办）';
+
+    row.append(button, count, remove);
+    host.append(row);
+  });
+
+  const addRow = document.createElement('button');
+  addRow.type = 'button';
+  addRow.className = 'todo-tag todo-tag-add';
+  addRow.id = 'todo-tag-add';
+  addRow.textContent = '＋ 新建分类';
+  host.append(addRow);
+}
+
+function persistCategoryState() {
+  persistTodoCategoryNames();
+  applyTodoCategoryNames();
+  renderList();
+}
+
+function startTagRename(row) {
+  const id = row.dataset.cat;
+  const button = row.querySelector('.todo-tag');
+  const nameSpan = button.querySelector('.todo-tag-name');
+  if (!nameSpan || button.querySelector('.todo-tag-rename')) return;
+  nameSpan.hidden = true;
+  const input = document.createElement('input');
+  input.className = 'todo-tag-rename';
+  input.value = todoCategoryNames[id] || '';
+  input.maxLength = 24;
+  input.setAttribute('aria-label', '重命名分类');
+  button.append(input);
+  input.focus();
+  input.select();
+  let renameDone = false;
+  const finish = (save) => {
+    if (renameDone) return;
+    renameDone = true;
+    const value = input.value.trim();
+    if (save && value) {
+      todoCategoryNames[id] = value.slice(0, 24);
+      persistTodoCategoryNames();
+    }
+    input.remove();
+    nameSpan.hidden = false;
     applyTodoCategoryNames();
   };
-  input.addEventListener('change', finishCategoryEdit);
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.isComposing) {
       event.preventDefault();
-      input.blur();
-    }
-    if (event.key === 'Escape') {
-      input.value = todoCategoryNames[input.dataset.category];
-      input.blur();
+      finish(true);
+    } else if (event.key === 'Escape') {
+      finish(false);
     }
   });
+  input.addEventListener('blur', () => finish(true));
+}
+
+function addTodoCategory(name) {
+  const clean = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+  if (!clean) return false;
+  if (PRIORITIES.some((id) => todoCategoryNames[id] === clean)) {
+    showStatusToast('已有同名分类');
+    return false;
+  }
+  const id = 'c' + Date.now().toString(36);
+  PRIORITIES.push(id);
+  todoCategoryNames[id] = clean;
+  data[id] = data[id] || [];
+  persistCategoryState();
+  showStatusToast(`已创建分类「${clean}」`);
+  return true;
+}
+
+function deleteTodoCategory(id) {
+  if (PRIORITIES.length <= 1) {
+    showStatusToast('至少保留一个分类', true);
+    return;
+  }
+  const items = data[id] || [];
+  if (items.length) {
+    showStatusToast(`「${todoCategoryNames[id] || id}」里还有 ${items.length} 件待办，清空后再删除`, true);
+    return;
+  }
+  const index = PRIORITIES.indexOf(id);
+  PRIORITIES.splice(index, 1);
+  delete todoCategoryNames[id];
+  delete data[id];
+  if (todoTag === id) todoTag = 'all';
+  if (todoSelection.size) {
+    todoSelection.clear();
+    todoSelectionAnchor = null;
+  }
+  persistCategoryState();
+  showStatusToast('已删除分类');
+}
+
+const todoRailCats = document.getElementById('todo-rail-cats');
+todoRailCats?.addEventListener('click', (event) => {
+  const remove = event.target.closest('.todo-tag-delete');
+  if (remove) {
+    deleteTodoCategory(remove.closest('.todo-tag-row')?.dataset.cat);
+    return;
+  }
+  const add = event.target.closest('#todo-tag-add');
+  if (add) {
+    // 原地变输入行：复用重命名输入框的交互
+    add.hidden = true;
+    const input = document.createElement('input');
+    input.className = 'todo-tag-rename';
+    input.placeholder = '分类名，回车保存';
+    input.maxLength = 24;
+    host_insertBefore(input, add);
+    input.focus();
+    let addDone = false;
+    const finish = (save) => {
+      if (addDone) return;
+      addDone = true;
+      if (save && input.value.trim()) addTodoCategory(input.value);
+      input.remove();
+      add.hidden = false;
+    };
+    input.addEventListener('keydown', (e2) => {
+      if (e2.key === 'Enter' && !e2.isComposing) {
+        e2.preventDefault();
+        finish(true);
+      } else if (e2.key === 'Escape') {
+        finish(false);
+      }
+    });
+    input.addEventListener('blur', () => finish(true));
+    return;
+  }
+  const tag = event.target.closest('.todo-tag');
+  if (!tag || tag.querySelector('.todo-tag-rename')) return;
+  todoTag = tag.dataset.tag;
+  document.querySelectorAll('.todo-tag').forEach((el) => el.classList.toggle('is-active', el === tag));
+  todoSelection.clear();
+  todoSelectionAnchor = null;
+  renderList();
+});
+function host_insertBefore(node, anchor) {
+  anchor.parentElement.insertBefore(node, anchor);
+}
+todoRailCats?.addEventListener('dblclick', (event) => {
+  const tag = event.target.closest('.todo-tag');
+  if (!tag || tag.dataset.tag === 'all') return;
+  const row = tag.closest('.todo-tag-row');
+  if (row) startTagRename(row);
 });
 
 applyTodoCategoryNames();

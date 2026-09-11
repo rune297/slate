@@ -220,7 +220,7 @@ const TOP_REVEAL_POLL_MS = 120; // 光标轮询间隔
 const TOP_REVEAL_PARK_Y = -4000; // 停靠时的 y 坐标（屏幕上方之外）
 const TOP_REVEAL_PUSH_PX = 40; // 下拉手势：触发所需的向下位移，越小越好触发
 const TOP_REVEAL_PUSH_WINDOW_MS = 900; // 下拉手势：进入热区后完成手势的时间上限
-const TOP_REVEAL_DWELL_MS = 900; // 兜底停留唤出：感应层失效时仍能用
+const TOP_REVEAL_DWELL_MS = 500; // 兜底停留唤出：感应层失效时仍能用（用户反馈 900ms 偏长，调至 0.5s）
 const TOP_REVEAL_SENSOR_H = 240; // 穿透感应层高度，需大于手势位移
 
 // ===== 收起判定（不依赖窗口焦点）=====
@@ -738,6 +738,32 @@ function tickDismissPolling() {
     return;
   }
 
+  // 有焦点（快捷键唤出）：点外面才收——失焦即收，光标移开不收。
+  // 无焦点（手势/悬停唤出，Windows 常拒绝给焦点）：收不到 blur，穿透层也
+  // 看不见原地按压——退回「光标离开面板并停留即收」，否则点外面永远关不掉。
+  if (!mainWindow.isFocused()) {
+    const unfocusedNow = Date.now();
+    if (!dismissExpandedAt) dismissExpandedAt = unfocusedNow;
+    if (unfocusedNow - dismissExpandedAt < DISMISS_GRACE_MS) return;
+    const point = screen.getCursorScreenPoint();
+    if (isPointInPanel(point.x, point.y, DISMISS_EDGE_MARGIN_PX)) {
+      dismissOutsideSince = 0;
+      dismissWasInside = true;
+      return;
+    }
+    if (!dismissWasInside && unfocusedNow - dismissExpandedAt < DISMISS_ASSUME_INSIDE_MS) return;
+    if (!dismissOutsideSince) {
+      dismissOutsideSince = unfocusedNow;
+      debugLog(`leave-panel focused=${mainWindow.isFocused()}`);
+      return;
+    }
+    if (unfocusedNow - dismissOutsideSince >= DISMISS_OUTSIDE_DWELL_MS) {
+      dismissOutsideSince = 0;
+      debugLog('collapse: cursor-outside (panel unfocused)');
+      requestRendererCollapse();
+    }
+    return;
+  }
   if (!DISMISS_ON_LEAVE) return;
   const now = Date.now();
   if (!dismissExpandedAt) dismissExpandedAt = now;

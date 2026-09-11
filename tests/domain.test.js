@@ -825,6 +825,31 @@ test('todoBelongsToView routes items into the four time views', () => {
   assert.equal(domain.todoBelongsToView(done, 'today', now), false);
 });
 
+test('todoDueChip returns readable remaining-time badges instead of a percent bar', () => {
+  const now = new Date(2026, 8, 12, 10, 0, 0, 0);
+  assert.deepEqual(domain.todoDueChip({ text: 'x', done: false, deadline: '' }, now), null);
+  assert.deepEqual(
+    domain.todoDueChip({ text: 'x', done: true, deadline: new Date(2026, 8, 11).toISOString() }, now),
+    null
+  );
+  assert.deepEqual(
+    domain.todoDueChip({ text: 'x', done: false, deadline: new Date(2026, 8, 11, 9).toISOString() }, now),
+    { label: '已过期', tone: 'red' }
+  );
+  assert.deepEqual(
+    domain.todoDueChip({ text: 'x', done: false, deadline: new Date(2026, 8, 12, 10, 40).toISOString() }, now),
+    { label: '剩 40 分钟', tone: 'red' }
+  );
+  assert.deepEqual(
+    domain.todoDueChip({ text: 'x', done: false, deadline: new Date(2026, 8, 12, 15).toISOString() }, now),
+    { label: '剩 5 小时', tone: 'amber' }
+  );
+  assert.deepEqual(
+    domain.todoDueChip({ text: 'x', done: false, deadline: new Date(2026, 8, 15, 10).toISOString() }, now),
+    { label: '剩 3 天', tone: 'green' }
+  );
+});
+
 test('shouldTogglePanelForSpace toggles plain Space but never steals typing input', () => {
   assert.equal(shouldTogglePanelForSpace({ key: ' ', repeat: false, editable: false }), true);
   assert.equal(shouldTogglePanelForSpace({ key: 'Spacebar', repeat: false, editable: false }), true);

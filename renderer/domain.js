@@ -495,6 +495,22 @@
     return { text: text.trim(), deadline: target.toISOString() };
   }
 
+  // 到期状态徽标：已过期 / 剩余分钟 / 小时 / 天。无截止时间返回 null。
+  function todoDueChip(item, now = new Date()) {
+    if (!item || item.done === true) return null;
+    const deadlineTime = Date.parse(String(item.deadline || ''));
+    if (!Number.isFinite(deadlineTime)) return null;
+    const diff = deadlineTime - now.getTime();
+    if (diff < 0) return { label: '已过期', tone: 'red' };
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return { label: '就到现在', tone: 'red' };
+    if (minutes < 60) return { label: `剩 ${minutes} 分钟`, tone: 'red' };
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return { label: `剩 ${hours} 小时`, tone: 'amber' };
+    const days = Math.floor(hours / 24);
+    return { label: `剩 ${days} 天`, tone: 'green' };
+  }
+
   function filterCredentials(items, query) {
     const rows = Array.isArray(items) ? items : [];
     const keyword = String(query || '').trim().toLocaleLowerCase();
@@ -1040,6 +1056,7 @@
     sortTodosForDisplay,
     todoBelongsToView,
     parseQuickTodoDate,
+    todoDueChip,
     filterCredentials,
     credentialRowAction,
     visiblePanelTabs,

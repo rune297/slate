@@ -39,6 +39,7 @@
   --toggle-off: rgba(28, 25, 18, 0.16);
   --toggle-on: rgba(47, 111, 219, 0.85);
   --toggle-knob: #ffffff;
+  --select-popup-bg: #ffffff;
 
   /* 参考界面只用少量高亮色；大面积模块跟随主题面。 */
   --accent-green: #1d9e63;
@@ -171,6 +172,7 @@
   --toggle-off: rgba(255, 255, 255, 0.10);
   --toggle-on: rgba(67, 140, 255, 0.55);
   --toggle-knob: #f5f7ff;
+  --select-popup-bg: #2b2c30;
 
   --accent-green: #30D978;
   --accent-orange: #FF9352;
@@ -1019,22 +1021,6 @@ body {
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.dot-p0 {
-  background: var(--p0);
-}
-
-.dot-p1 {
-  background: var(--p1);
-}
-
-.dot-p2 {
-  background: var(--p2);
-}
-
-.dot-p3 {
-  background: var(--p3);
 }
 
 .count {
@@ -2409,8 +2395,8 @@ body {
   white-space: nowrap;
 }
 .todo-ddl {
-  color: var(--text-3);
-  font: 9px/1.2 var(--font-mono);
+  color: var(--text-2);
+  font: 11px/1.2 var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 .todo-item.done .todo-ddl { opacity: .5; }
@@ -2555,8 +2541,6 @@ body {
 }
 .todo-copy .todo-text { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-ddl { white-space: nowrap; }
-.todo-copy .todo-battery { width: 58px; height: 14px; }
-.todo-battery b { font-size: 8px; line-height: 14px; }
 .todo-deadline-trigger {
   min-width: 0;
   height: 34px;
@@ -2640,49 +2624,6 @@ body {
 .home-note[data-widget-size='mini'] .note-format-actions { display: none; }
 .home-recorder[data-widget-size='mini'] .recorder-head { overflow: hidden; white-space: nowrap; }
 .home-recorder[data-widget-size='mini'] .recorder-controls { left: 10px; bottom: 8px; transform: scale(.78); transform-origin: left bottom; }
-
-/* ============ 时间电量与统一多选 ============ */
-.todo-battery {
-  position: relative;
-  width: 68px;
-  height: 15px;
-  flex: 0 0 auto;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--hover-bg);
-  box-shadow: inset 0 0 0 1px var(--border-soft);
-}
-.todo-battery i { position: absolute; inset: 0 auto 0 0; width: var(--battery); border-radius: inherit; opacity: .9; }
-.todo-battery b { position: relative; z-index: 1; display: block; color: var(--text-1); font: 500 8px/15px var(--font-mono); text-align: center; }
-.todo-battery[data-tone='green'] i { background: linear-gradient(90deg, #209f5a, #48d989); }
-.todo-battery[data-tone='yellow'] i { background: linear-gradient(90deg, #b89421, #f0ce52); }
-.todo-battery[data-tone='orange'] i { background: linear-gradient(90deg, #bd682a, #f69a4b); }
-.todo-battery[data-tone='red'] i { background: linear-gradient(90deg, #b83939, #ff6262); }
-/* 逾期：整条实心红 + 居中白色感叹号。剩余 0% 是一条空槽，逾期必须是满槽，
-   两者不能长得一样，否则「已经欠账」被读成「快到了」。 */
-.todo-battery[data-overdue='true'] {
-  background: var(--p0);
-  box-shadow:
-    inset 0 0 0 1px var(--border-soft-strong),
-    0 0 0 2px rgba(255,95,87,.16);
-}
-.todo-battery[data-overdue='true'] i {
-  background: var(--p0);
-  opacity: 1;
-}
-.todo-battery[data-overdue='true'] b {
-  color: #fff;
-  font: 700 11px/15px var(--font);
-  letter-spacing: 0;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .todo-battery[data-overdue='true'] { animation: todo-overdue-pulse 2s var(--ease-soft) infinite; }
-}
-@keyframes todo-overdue-pulse {
-  0%, 100% { box-shadow: inset 0 0 0 1px var(--border-soft-strong), 0 0 0 2px rgba(255,95,87,.16); }
-  50% { box-shadow: inset 0 0 0 1px var(--border-soft-strong), 0 0 0 3px rgba(255,95,87,.3); }
-}
-.todo-item.done .todo-battery { opacity: .35; }
 .multi-selected { box-shadow: inset 0 0 0 1.5px rgba(126,169,255,.78), 0 8px 22px rgba(39,76,150,.15) !important; background: rgba(95,139,230,.13) !important; }
 .bulk-delete {
   flex: 0 0 auto;
@@ -2929,7 +2870,6 @@ body {
   font: 10px var(--font);
 }
 .todo-inline-name { flex: 1 1 80px; padding: 0 9px; box-shadow: inset 0 0 0 1px rgba(130,169,255,.45); }
-.todo-inline-editor .todo-battery { flex: 0 0 68px; }
 .todo-inline-deadline { flex: 0 0 92px; padding: 0 7px; color: var(--text-3); white-space: nowrap; cursor: pointer; }
 .todo-inline-save { flex: 0 0 31px; color: var(--accent-text); cursor: pointer; }
 
@@ -3725,6 +3665,8 @@ body {
 .home-bento > .home-launcher[data-layout-variant='tall'] .launcher-name,
 .home-bento > .home-launcher[data-layout-variant='full'] .launcher-name { font-size: 10px; }
 
+/* 原生 select 弹出层：Chromium 用 select 的底色渲染 option，必须给实底 */
+select option { background-color: var(--select-popup-bg); color: var(--text-1); }
 /* ============ 待办 · 视角化布局（今天/已排期/收件箱/已完成）============ */
 .todo-shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--s-3); height: 100%; }
 .todo-rail { padding: var(--s-3); display: flex; flex-direction: column; gap: var(--s-4); min-height: 0; background: var(--surface-1); box-shadow: none; overflow-y: auto; }
@@ -3747,7 +3689,7 @@ body {
 #todo-quick-input:focus { box-shadow: inset 0 0 0 var(--hairline-w) var(--accent-text-soft); }
 #todo-quick-input::placeholder { color: var(--text-4); }
 #todo-quick-input.invalid { box-shadow: inset 0 0 0 1px var(--status-danger); }
-#todo-quick-cat { flex: 0 0 auto; height: 34px; padding: 0 26px 0 10px; border: 0; border-radius: 11px; outline: none; background: var(--hover-bg); color: var(--text-2); font: var(--fs-small) var(--font); cursor: pointer; }
+#todo-quick-cat { flex: 0 0 auto; height: 34px; padding: 0 26px 0 10px; border: 0; border-radius: 11px; outline: none; background: var(--tooltip-bg); color: var(--text-2); font: var(--fs-small) var(--font); cursor: pointer; }
 #todo-quick-cat:hover { background: var(--hover-bg-strong); color: var(--text-1); }
 #todo-quick-deadline { min-height: 34px; }
 .todo-view-head { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-bottom: 4px; }
@@ -3765,3 +3707,16 @@ body {
 .todo-pin { flex: 0 0 auto; min-height: 20px; padding: 0 7px; border: 0; border-radius: 999px; background: transparent; color: var(--text-4); font: var(--fs-micro) var(--font); cursor: pointer; }
 .todo-pin:hover { background: var(--hover-bg); color: var(--text-2); }
 .todo-pin.pinned { background: var(--invert-bg); color: var(--invert-text); }
+
+/* ============ 到期徽标与分类管理 ============ */
+.todo-due { flex: 0 0 auto; padding: 2px 7px; border-radius: 999px; font: var(--fs-caption)/1.4 var(--font); white-space: nowrap; }
+.todo-due[data-tone='green'] { background: rgba(56, 142, 60, .14); color: var(--status-ok); }
+.todo-due[data-tone='amber'] { background: rgba(191, 130, 10, .15); color: var(--status-warn); }
+.todo-due[data-tone='red'] { background: rgba(200, 60, 50, .16); color: var(--status-danger); font-weight: 620; }
+.todo-tag-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-tag-rename { flex: 1 1 auto; min-width: 0; width: 100%; padding: 2px 4px; border: 0; border-radius: 6px; outline: none; background: var(--hover-bg-strong); color: var(--text-1); font: var(--fs-small) var(--font); }
+.todo-tag-delete { flex: 0 0 auto; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-4); font: 12px/18px var(--font); cursor: pointer; opacity: 0; transition: opacity var(--d-fast) var(--ease), background var(--d-fast) var(--ease), color var(--d-fast) var(--ease); }
+.todo-tag-row:hover .todo-tag-delete { opacity: 1; }
+.todo-tag-delete:hover { background: rgba(200, 60, 50, .16); color: var(--status-danger); }
+.todo-tag-add { justify-content: center; color: var(--text-3); border: 1px dashed var(--border-soft); }
+.todo-tag-add:hover { color: var(--text-1); background: var(--hover-bg); }

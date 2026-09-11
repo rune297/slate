@@ -201,30 +201,15 @@
             <div class="todo-shell">
               <aside class="todo-rail tile">
                 <div class="todo-rail-views">
-                  <button class="todo-view is-active" data-view="today" type="button"><span>今天</span><em data-view-count="today">0</em></button>
-                  <button class="todo-view" data-view="upcoming" type="button"><span>已排期</span><em data-view-count="upcoming">0</em></button>
-                  <button class="todo-view" data-view="inbox" type="button"><span>收件箱</span><em data-view-count="inbox">0</em></button>
-                  <button class="todo-view" data-view="done" type="button"><span>已完成</span><em data-view-count="done">0</em></button>
+                  <button class="todo-view is-active" data-view="today" type="button" title="今天到期、已过期、以及手动加入今天的事"><span>今天</span><em data-view-count="today">0</em></button>
+                  <button class="todo-view" data-view="upcoming" type="button" title="安排在明天及以后的待办"><span>已排期</span><em data-view-count="upcoming">0</em></button>
+                  <button class="todo-view" data-view="inbox" type="button" title="还没安排截止时间的待办，随手记下来稍后安排"><span>收件箱</span><em data-view-count="inbox">0</em></button>
+                  <button class="todo-view" data-view="done" type="button" title="已完成的待办留档"><span>已完成</span><em data-view-count="done">0</em></button>
                 </div>
                 <div class="todo-rail-tags">
-                  <div class="todo-rail-heading">分类</div>
+                  <div class="todo-rail-heading">分类（单击筛选 · 双击重命名）</div>
                   <button class="todo-tag is-active" data-tag="all" type="button"><span>全部</span></button>
-                  <div class="todo-tag-row" data-tag-row="P0">
-                    <button class="todo-tag" data-tag="P0" type="button"><i class="dot dot-p0" aria-hidden="true"></i><input class="todo-category-name" data-category="P0" value="课程" maxlength="24" aria-label="修改分类名称" /></button>
-                    <span class="count" data-priority="P0">0</span>
-                  </div>
-                  <div class="todo-tag-row" data-tag-row="P1">
-                    <button class="todo-tag" data-tag="P1" type="button"><i class="dot dot-p1" aria-hidden="true"></i><input class="todo-category-name" data-category="P1" value="自媒体&amp;写作" maxlength="24" aria-label="修改分类名称" /></button>
-                    <span class="count" data-priority="P1">0</span>
-                  </div>
-                  <div class="todo-tag-row" data-tag-row="P2">
-                    <button class="todo-tag" data-tag="P2" type="button"><i class="dot dot-p2" aria-hidden="true"></i><input class="todo-category-name" data-category="P2" value="Vibe coding" maxlength="24" aria-label="修改分类名称" /></button>
-                    <span class="count" data-priority="P2">0</span>
-                  </div>
-                  <div class="todo-tag-row" data-tag-row="P3">
-                    <button class="todo-tag" data-tag="P3" type="button"><i class="dot dot-p3" aria-hidden="true"></i><input class="todo-category-name" data-category="P3" value="日常" maxlength="24" aria-label="修改分类名称" /></button>
-                    <span class="count" data-priority="P3">0</span>
-                  </div>
+                  <div id="todo-rail-cats"></div>
                 </div>
               </aside>
               <div class="todo-main tile">
@@ -438,7 +423,7 @@
                     </span>
                   </div>
                   <label class="settings-device-row settings-auto-launch-row">
-                    <div><span>开机自动启动</span><strong>登录后自动运行 Slate</strong></div>
+                    <div><span>开机自动启动</span><strong>开机后自动运行 Slate</strong></div>
                     <input id="settings-auto-launch" type="checkbox" aria-label="开机自动启动" />
                     <i aria-hidden="true"></i>
                   </label>
