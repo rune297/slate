@@ -1133,6 +1133,115 @@ async function main() {
     assert.deepEqual(launcherAudit.afterDuplicate, { itemCount: 1, toast: 'Alpha 已经在快速启动里' }, '重复添加应被拦截且不产生重复项');
     assert.deepEqual(launcherAudit.afterRemove, { itemCount: 0, hintVisible: true, toast: '已移除 Alpha' }, '移除后应回到空态并给出反馈');
 
+    // 速记的 Markdown 预览、格式工具栏与编辑/预览切换此前只有 JS 与 CSS，HTML 从未声明对应元素，
+    // 250 行解析器完全不可达。这里锁死三者已接线，并覆盖渲染结果、格式写入与录音波形画布。
+    const noteAudit = await window.webContents.executeJavaScript(`
+      (async () => {
+        const input = document.getElementById('home-note');
+        const preview = document.getElementById('home-note-preview');
+        const toolbar = document.getElementById('note-format-actions');
+        const editButton = document.getElementById('note-edit-btn');
+        const strands = document.getElementById('recording-strands');
+
+        // 这些钩子只存在于 JS/CSS，HTML 从未声明过；缺失时先给出明确结论，
+        // 否则后面 dereference 会抛 TypeError，看不出是哪一环断了。
+        const missingHooks = ['home-note-preview', 'note-format-actions', 'note-edit-btn', 'recording-strands']
+          .filter((id) => !document.getElementById(id));
+        if (missingHooks.length) return { missingHooks };
+        const waitFor = async (predicate, timeout = 2000) => {
+          const startedAt = Date.now();
+          while (!predicate() && Date.now() - startedAt < timeout) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          return predicate();
+        };
+        const setValue = (value) => {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+          setter.call(input, value);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const noteSnapshot = localStorage.getItem('slate-home-note');
+        const archiveSnapshot = localStorage.getItem('slate-note-active-archive-v1');
+
+        const formatNames = [...toolbar.querySelectorAll('[data-note-format]')]
+          .map((button) => button.dataset.noteFormat);
+        const editLabelWhileEditing = editButton.textContent;
+
+        setValue('# 标题\\n\\n**加粗** 与 [链接](https://example.com)\\n\\n- 项目一\\n- [ ] 待办');
+        await waitFor(() => preview.children.length > 0);
+        editButton.click();
+        await waitFor(() => !preview.hidden);
+        const heading = preview.querySelector('h1');
+        const strong = preview.querySelector('strong');
+        const link = preview.querySelector('[data-note-href]');
+        const inPreview = {
+          textareaHidden: input.hidden,
+          previewVisible: !preview.hidden,
+          toolbarHidden: toolbar.hidden,
+          editLabel: editButton.textContent,
+          heading: heading ? heading.textContent : null,
+          strong: strong ? strong.textContent : null,
+          linkHref: link ? link.dataset.noteHref : null,
+          listItems: preview.querySelectorAll('li').length,
+          taskBoxes: preview.querySelectorAll('.note-task-box').length,
+        };
+
+        editButton.click();
+        await waitFor(() => preview.hidden);
+        const backToEditing = {
+          textareaVisible: !input.hidden,
+          toolbarVisible: !toolbar.hidden,
+          editLabel: editButton.textContent,
+        };
+
+        setValue('hello');
+        input.focus();
+        input.setSelectionRange(0, 5);
+        toolbar.querySelector('[data-note-format="bold"]').click();
+        const boldedText = input.value;
+
+        const strandsState = strands
+          ? {
+              exists: true,
+              parentId: strands.parentElement ? strands.parentElement.id : null,
+              display: getComputedStyle(strands).display,
+            }
+          : { exists: false };
+
+        setValue(noteSnapshot || '');
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        if (noteSnapshot === null) localStorage.removeItem('slate-home-note');
+        if (archiveSnapshot === null) localStorage.removeItem('slate-note-active-archive-v1');
+
+        return { missingHooks, formatNames, editLabelWhileEditing, inPreview, backToEditing, boldedText, strandsState };
+      })()
+    `);
+    assert.deepEqual(noteAudit.missingHooks, [], '速记预览层、格式工具栏、编辑切换与录音波形画布的 DOM 必须存在于首页');
+    assert.deepEqual(noteAudit.formatNames, [
+      'bold', 'italic', 'heading', 'bullet', 'ordered', 'task', 'quote', 'code', 'link',
+    ], '速记格式工具栏必须覆盖标题/粗斜体/列表/任务/引用/代码/链接');
+    assert.equal(noteAudit.editLabelWhileEditing, '完成', '编辑态下切换按钮应提示“完成”');
+    assert.deepEqual(noteAudit.inPreview, {
+      textareaHidden: true,
+      previewVisible: true,
+      toolbarHidden: true,
+      editLabel: '编辑',
+      heading: '标题',
+      strong: '加粗',
+      linkHref: 'https://example.com/',
+      listItems: 2,
+      taskBoxes: 1,
+    }, '预览应渲染标题、加粗、链接、列表与任务项，并让出编辑区');
+    assert.deepEqual(noteAudit.backToEditing, {
+      textareaVisible: true,
+      toolbarVisible: true,
+      editLabel: '完成',
+    }, '切回编辑应恢复文本域与格式工具栏');
+    assert.equal(noteAudit.boldedText, '**hello**', '格式按钮应在光标选区上写入 Markdown');
+    assert.equal(noteAudit.strandsState.exists, true, '#recording-strands 画布必须回到录音磁贴');
+    assert.equal(noteAudit.strandsState.parentId, 'home-recorder', '波形画布必须是录音磁贴的直接子元素');
+    assert.notEqual(noteAudit.strandsState.display, 'none', '波形画布不得再被 CSS 永久隐藏');
+
     // 首页时钟组件移除后，默认截止时间的跨日刷新曾随之失效：
     // tickClock 在首行因缺少时钟元素而 return，把待办默认时间一起带走了。
     const deadlineRolloverAudit = await window.webContents.executeJavaScript(`

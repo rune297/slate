@@ -61,7 +61,6 @@
   --note-toolbar-h: 28px;
   --note-tool-size: 26px;
   --note-icon-size: 14px;
-  --note-mode-w: 88px;
   --note-task-box-size: 13px;
   --home-mirror-size: 180px;
 
@@ -446,36 +445,6 @@ body {
   flex-shrink: 0;
 }
 
-.collapse-btn {
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-1);
-  border: 1px solid var(--hairline-soft);
-  color: var(--text-3);
-  cursor: pointer;
-  transition:
-    background var(--d-fast) var(--ease),
-    color var(--d-fast) var(--ease),
-    transform var(--d-1) var(--ease-out);
-}
-
-.collapse-btn:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-
-.collapse-btn:active {
-  transform: scale(0.86);
-}
-
-.collapse-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
 /* ============ 内容区 · Tab 面板 ============ */
 .panels {
   position: relative;
@@ -682,17 +651,6 @@ body {
   font-size: var(--fs-micro);
 }
 
-.note-mode-switch {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  width: var(--note-mode-w);
-  height: var(--note-toolbar-h);
-  flex: 0 0 var(--note-mode-w);
-  padding: var(--s-half);
-  border: var(--hairline-w) solid var(--hairline-soft);
-  border-radius: var(--r-pill);
-  background: var(--surface-2);
-}
 
 .note-persist-actions {
   display: flex;
@@ -2236,8 +2194,6 @@ body {
 .workspace-button:active { transform: scale(0.96); }
 .workspace-button.compact { min-height: 30px; padding: 0 10px; }
 .workspace-button:disabled { opacity: 0.45; cursor: default; }
-.links-status { min-width: 0; overflow: hidden; color: var(--text-3); font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
-.links-status[data-tone='error'] { color: var(--p0); }
 
 .link-groups {
   flex: 1;
@@ -2474,7 +2430,6 @@ body {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 4px 14px rgba(0,0,0,.28);
 }
 
-.collapse-btn,
 .workspace-button,
 .record-control {
   background: linear-gradient(180deg, rgba(255,255,255,.085), rgba(255,255,255,.04));
@@ -2807,19 +2762,6 @@ body {
   100% { transform: scale(1); }
 }
 
-.links-status[data-tone='busy']::before {
-  content: '';
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 7px;
-  border: 1.5px solid rgba(255,255,255,.14);
-  border-top-color: rgba(160,190,255,.9);
-  border-radius: 50%;
-  vertical-align: -2px;
-  animation: native-loader-spin 720ms linear infinite;
-}
-@keyframes native-loader-spin { to { transform: rotate(360deg); } }
 
 /* ============ 实时录音 Strands ============ */
 .home-recorder { isolation: isolate; }
@@ -3027,7 +2969,6 @@ body {
 
 /* 录音只保留底部三枚控制按钮。 */
 .home-recorder .recorder-controls { position: absolute; left: 15px; right: auto; bottom: 14px; justify-content: flex-start; }
-.recording-strands { display: none !important; }
 
 /* Tab 横跨面板，并在物理顶部条位置留出安全空槽；功能全开时自然分成左右两组。 */
 .topbar { position: relative; }

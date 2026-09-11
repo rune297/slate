@@ -208,7 +208,6 @@
   const linkInput = document.getElementById('link-add');
   const linkBulkDelete = document.getElementById('link-bulk-delete');
   const linkGroupsEl = document.getElementById('link-groups');
-  const linksStatus = document.getElementById('links-status');
   let linkGroups = loadJson(LINKS_KEY, []);
   if (!Array.isArray(linkGroups)) linkGroups = [];
   let linkSelection = new Set();
@@ -219,11 +218,8 @@
     saveJson(LINKS_KEY, linkGroups);
   }
 
-  function setLinksStatus(message, tone = '') {
-    if (linksStatus) {
-      linksStatus.textContent = '';
-      linksStatus.dataset.tone = tone;
-    }
+  // 链接操作的反馈统一走全局 toast；此处保留单一入口，便于以后换成内联提示。
+  function setLinksStatus(message) {
     if (message && typeof showStatusToast === 'function') showStatusToast(message);
   }
 
@@ -349,11 +345,11 @@
   function addLink(rawValue, requestedGroupId = '') {
     const normalized = Domain.normalizeHttpUrl(rawValue);
     if (!normalized) {
-      setLinksStatus('请输入有效的公开网址', 'error');
+      setLinksStatus('请输入有效的公开网址');
       return false;
     }
     if (allLinks().some((link) => link.url === normalized)) {
-      setLinksStatus('这个链接已经收藏过了', 'error');
+      setLinksStatus('这个链接已经收藏过了');
       return false;
     }
     const link = { id: uid('link'), url: normalized, title: '未命名', icon: '', createdAt: Date.now() };
@@ -653,16 +649,10 @@
       if (!wasActive) return;
       // 拖拽结束后浏览器仍会补一个 click，必须拦掉，否则松手即打开链接。
       suppressLinkClick = true;
-      if (!target) {
-        setLinksStatus('');
-        return;
-      }
+      if (!target) return;
       const before = linkOrderFingerprint();
       linkGroups = Domain.moveLinkToPosition(linkGroups, linkId, target.groupId, target.index);
-      if (linkOrderFingerprint() === before) {
-        setLinksStatus('');
-        return;
-      }
+      if (linkOrderFingerprint() === before) return;
       persistLinks();
       renderLinkGroups();
       setLinksStatus('链接顺序已更新');

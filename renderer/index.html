@@ -101,6 +101,7 @@
             <div class="home-bento" id="home-bento" aria-label="可长按拖动调整的首页布局">
               <!-- 快速录音与实时转写 -->
               <section class="tile home-recorder" id="home-recorder" data-home-module="recorder" data-widget-size="medium">
+                <canvas class="recording-strands" id="recording-strands" aria-hidden="true"></canvas>
                 <div class="recorder-head">
                   <span class="recording-state-dot" id="home-recording-dot"></span>
                   <span class="tile-label" id="home-recording-state">快速录音</span>
@@ -170,7 +171,19 @@
               <section class="tile home-note" data-home-module="note" data-widget-size="large">
                 <div class="note-toolbar" role="toolbar" aria-label="随笔记操作">
                   <span class="tile-label">随笔记</span>
+                  <div class="note-format-actions" id="note-format-actions" role="group" aria-label="Markdown 格式">
+                    <button class="note-tool" type="button" data-note-format="bold" title="加粗" aria-label="加粗"><span class="note-tool-glyph note-tool-bold">B</span></button>
+                    <button class="note-tool" type="button" data-note-format="italic" title="斜体" aria-label="斜体"><span class="note-tool-glyph note-tool-italic">I</span></button>
+                    <button class="note-tool" type="button" data-note-format="heading" title="标题" aria-label="标题"><span class="note-tool-glyph note-tool-bold">H</span></button>
+                    <button class="note-tool" type="button" data-note-format="bullet" title="无序列表" aria-label="无序列表"><span class="note-tool-glyph note-tool-bullet">•</span></button>
+                    <button class="note-tool" type="button" data-note-format="ordered" title="有序列表" aria-label="有序列表"><span class="note-tool-glyph note-tool-small">1.</span></button>
+                    <button class="note-tool" type="button" data-note-format="task" title="待办" aria-label="待办"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg></button>
+                    <button class="note-tool" type="button" data-note-format="quote" title="引用" aria-label="引用"><span class="note-tool-glyph note-tool-quote">“</span></button>
+                    <button class="note-tool" type="button" data-note-format="code" title="行内代码" aria-label="行内代码"><span class="note-tool-glyph note-tool-code">&lt;/&gt;</span></button>
+                    <button class="note-tool" type="button" data-note-format="link" title="插入链接" aria-label="插入链接"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.4 13.6a3.6 3.6 0 0 0 5.1 0l2.9-2.9a3.6 3.6 0 0 0-5.1-5.1l-1 1"/><path d="M13.6 10.4a3.6 3.6 0 0 0-5.1 0l-2.9 2.9a3.6 3.6 0 0 0 5.1 5.1l1-1"/></svg></button>
+                  </div>
                   <div class="note-persist-actions" role="group" aria-label="速记保存操作">
+                    <button class="note-mode active" id="note-edit-btn" type="button" aria-label="编辑与预览切换" title="编辑与预览切换" aria-pressed="true">完成</button>
                     <button class="note-mode note-save-btn" id="note-save-btn" type="button" aria-label="保存笔记" title="保存笔记">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>
                     </button>
@@ -184,6 +197,7 @@
                     aria-label="Markdown 速记内容"
                     spellcheck="false"
                   ></textarea>
+                  <div class="note-preview" id="home-note-preview" tabindex="0" role="document" aria-label="速记预览" hidden></div>
                 </div>
               </section>
 

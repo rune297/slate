@@ -747,7 +747,6 @@ let TABS = ALL_TABS.filter((name) => name !== 'clip');
 let tabButtons = Array.from(document.querySelectorAll('.tab:not([hidden])'));
 const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
 const tabIndicator = document.getElementById('tab-indicator');
-const collapseBtn = document.getElementById('collapse-btn');
 
 let activeTab = 'home';
 let defaultOpenTab = 'home';
@@ -972,13 +971,6 @@ function openShortcutRecorder() {
 }
 window.slateAPI?.onRecordShortcut?.(openShortcutRecorder);
 document.addEventListener('slate:record-shortcut', openShortcutRecorder);
-
-if (collapseBtn) {
-  collapseBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    setMode(false);
-  });
-}
 
 // 顶栏空白处点按收起——黑条在展开态已退场，由顶栏接替这一角色。
 // 排除交互区（Tab / 按钮 / 输入 / 搜索框），品牌区与空白处都可收起（明确的收起热区）。
@@ -1340,7 +1332,6 @@ const notesSearch = document.getElementById('notes-search');
 const notesDetail = document.getElementById('notes-detail');
 const notesCount = document.getElementById('notes-count');
 const noteFormatActions = document.getElementById('note-format-actions');
-const noteModeButtons = Array.from(document.querySelectorAll('[data-note-mode]'));
 const noteEditButton = document.getElementById('note-edit-btn');
 const homeNote = document.querySelector('.home-note');
 
@@ -1792,11 +1783,7 @@ function setNoteMode(mode, focusTarget = true) {
   notePreview.hidden = !isPreview;
   if (noteFormatActions) noteFormatActions.hidden = isPreview;
   if (homeNote) homeNote.classList.toggle('is-preview', isPreview);
-  noteModeButtons.forEach((button) => {
-    const active = button.dataset.noteMode === noteMode;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
+
   if (noteEditButton) {
     noteEditButton.classList.toggle('active', !isPreview);
     noteEditButton.textContent = isPreview ? '编辑' : '完成';
@@ -2244,9 +2231,7 @@ if (noteFormatActions) {
   });
 }
 
-noteModeButtons.forEach((button) => {
-  button.addEventListener('click', () => setNoteMode(button.dataset.noteMode));
-});
+
 noteEditButton?.addEventListener('click', () => setNoteMode(noteMode === 'preview' ? 'edit' : 'preview'));
 
 if (notePreview) {
