@@ -599,6 +599,11 @@ async function setMode(expanded) {
       app.classList.add('expanded');
       // 展开后面板从隐藏变为可见，tab 尺寸此时才可量，校准激活胶囊位置
       requestAnimationFrame(() => requestAnimationFrame(positionIndicator));
+      // 首页揭示结束后播放镜子的像素揭示（设计约定；内部仅对首页生效）。
+      setTimeout(() => {
+        if (!isExpanded) return;
+        replayMirrorPixelReveal();
+      }, OPENING_SETTLE_MS);
       setTimeout(() => {
         if (!isExpanded) return;
         if (activeTab === 'clip') renderClipList();

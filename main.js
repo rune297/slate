@@ -241,7 +241,6 @@ const DISMISS_ASSUME_INSIDE_MS = 2500;
 // 不需要时改成 false 即可，不会产生任何额外开销）。
 const DISMISS_DEBUG = true;
 
-const CLIP_MAX_ITEMS = 100;
 const CLIP_POLL_INTERVAL_MS = 500;
 // 大图从系统 ClipboardItem 复制到进程仍有固定成本；图片探测降到 3 秒一次，
 // 文本继续保持 500ms 响应，不影响日常文字剪贴体验。
@@ -1527,18 +1526,6 @@ function createWindow() {
     event.preventDefault();
     hideWindowAfterCollapse();
   });
-}
-
-function toggleVisibility() {
-  if (!mainWindow) {
-    createWindow();
-    return;
-  }
-  if (isPanelHidden()) {
-    revealPanelFromTopEdge();
-  } else {
-    hideWindowAfterCollapse();
-  }
 }
 
 function isAutoLaunchEnabled() {

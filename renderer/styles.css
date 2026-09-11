@@ -6,8 +6,6 @@
   --surface-3: #252525;
   --hairline: rgba(255, 255, 255, 0.08);
   --hairline-soft: rgba(255, 255, 255, 0.06);
-  --highlight-top: rgba(255, 255, 255, 0.07);
-  --tile-highlight: rgba(255, 255, 255, 0.05);
   --squircle-highlight: rgba(255, 255, 255, 0.16);
 
   --text-1: #F5F5F5;
@@ -35,9 +33,6 @@
   --home-mirror-surface: var(--surface-1);
 
   /* 剪贴板卡片：类型只通过浅描边区分，卡片尺寸统一。 */
-  --clip-text: rgba(255, 255, 255, 0.18);   /* 文字：中性微亮，几乎无色 */
-  --clip-url: var(--accent-blue);
-  --clip-image: var(--accent-orange);
   --clip-border-text: rgba(255, 255, 255, 0.10);
   --clip-border-url: rgba(67, 140, 255, 0.22);
   --clip-border-image: rgba(255, 147, 82, 0.20);
@@ -96,11 +91,9 @@
   --ease-spring: cubic-bezier(0.34, 1.1, 0.4, 1); /* 极轻微回弹落定：胶囊滑动/勾选（1.4→1.1，收敛过冲） */
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1); /* 对称缓动：窗口尺寸变形（无过冲，防裁切，保留） */
   --ease-island: cubic-bezier(0.22, 1, 0.36, 1);
-  --d-micro: 100ms; /* 纯颜色过渡，对齐 Linear 0.1s */
   --d-1: 90ms; /* 微反馈：按压（原 110ms） */
   --d-fast: 140ms; /* hover/颜色/边框主时长（原 180ms），对齐 Linear 0.16s */
   --d-base: 180ms; /* 内容态过渡（原 240ms） */
-  --d-slow: 260ms; /* 原 320ms */
   --d-grand: 340ms;
   --d-island-close: 280ms;
   --d-island-close-delay: 60ms;
@@ -348,21 +341,7 @@ body {
 .topbar {
   height: var(--topbar-h);
   flex-shrink: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px minmax(0, 1fr) auto;
-  grid-template-areas: 'tabs safe mid actions';
-  align-items: center;
-  gap: var(--s-3);
   cursor: pointer; /* 空白处可点收起 */
-}
-
-.topbar-mid {
-  grid-area: mid;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  justify-self: end;
 }
 
 /* ============ Tab 分段控件 ============ */
@@ -434,15 +413,6 @@ body {
   transition:
     transform var(--d-base) var(--ease-spring),
     width var(--d-base) var(--ease-out);
-}
-
-/* ============ 顶栏右侧 ============ */
-.topbar-actions {
-  grid-area: actions;
-  justify-self: end;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
 }
 
 /* ============ 内容区 · Tab 面板 ============ */
@@ -650,7 +620,6 @@ body {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
 }
-
 
 .note-persist-actions {
   display: flex;
@@ -1003,74 +972,8 @@ body {
   transition: opacity var(--d-base) var(--ease-out);
 }
 
-.mirror-zoom {
-  position: absolute;
-  top: var(--s-2);
-  right: var(--s-2);
-  z-index: 2;
-  padding: 3px 6px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.62);
-  color: var(--text-2);
-  font: var(--fs-micro) var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  opacity: 0;
-  transform: translateY(-3px);
-  transition: opacity var(--d-fast) var(--ease), transform var(--d-fast) var(--ease);
-  pointer-events: none;
-}
-
-.mirror-stage:hover .mirror-zoom,
-.mirror-stage:focus-visible .mirror-zoom {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 .home-mirror.live .mirror-video {
   opacity: 1;
-}
-
-.home-mirror.live .mirror-placeholder {
-  opacity: 0;
-}
-
-.mirror-placeholder {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--text-3);
-  transition: opacity var(--d-fast) var(--ease);
-}
-
-.mirror-placeholder svg {
-  width: 30px;
-  height: 30px;
-}
-
-.mirror-label {
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.4px;
-  color: var(--text-3);
-}
-
-.mirror-hint {
-  font-size: 10.5px;
-  font-weight: 400;
-  letter-spacing: 0.2px;
-  color: var(--text-4);
-  text-align: center;
-  max-width: 160px;
-  padding: 0 var(--s-3);
-}
-
-.home-mirror.live .mirror-hint {
-  visibility: hidden;
 }
 
 /* ============ 待办 · P0–P3 四象限 ============ */
@@ -1122,24 +1025,6 @@ body {
 
 .dot-p3 {
   background: var(--p3);
-}
-
-.quadrant-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.4px;
-  color: var(--text-2);
-}
-
-.quadrant-title {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.2px;
-  color: var(--text-1);
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .count {
@@ -2327,7 +2212,6 @@ body {
     --home-mirror-size: 160px;
   }
 
-
   .tab { padding-right: 9px; padding-left: 9px; }
   .tab-label { display: none; }
   .recordings-page { grid-template-columns: 240px minmax(0, 1fr); }
@@ -2342,8 +2226,6 @@ body {
   --surface-3: rgba(58, 58, 64, 0.72);
   --hairline: rgba(255, 255, 255, 0.12);
   --hairline-soft: rgba(255, 255, 255, 0.075);
-  --highlight-top: rgba(255, 255, 255, 0.16);
-  --tile-highlight: rgba(255, 255, 255, 0.09);
   --text-1: #f7f7f8;
   --text-2: #b4b4bb;
   --text-3: #7b7b84;
@@ -2408,10 +2290,6 @@ body {
   z-index: 4;
 }
 
-.topbar {
-  padding: 2px 4px;
-}
-
 .tabs {
   padding: 3px;
   border: 1px solid rgba(255, 255, 255, 0.07);
@@ -2438,7 +2316,6 @@ body {
 }
 
 .tile,
-.priority-card,
 .link-group,
 .recording-library,
 .recording-detail {
@@ -2499,7 +2376,6 @@ body {
 .home-bento > [data-widget-size='small']  { grid-column: span 2; grid-row: span 2; }
 .home-bento > [data-widget-size='medium'] { grid-column: span 4; grid-row: span 2; }
 .home-bento > [data-widget-size='large']  { grid-column: span 4; grid-row: span 4; }
-
 
 .widget-size-control {
   position: absolute;
@@ -2686,31 +2562,6 @@ body {
   border-color: rgba(255,255,255,.065);
   background: rgba(255,255,255,.045);
 }
-.add-row .todo-deadline-input {
-  padding-right: 6px;
-  padding-left: 8px;
-  color-scheme: dark;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-.todo-deadline-input.invalid {
-  border-color: rgba(255,95,87,.72);
-  box-shadow: 0 0 0 3px rgba(255,95,87,.09);
-}
-.todo-add-button {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 10px;
-  background: linear-gradient(180deg, rgba(255,255,255,.11), rgba(255,255,255,.055));
-  color: var(--text-1);
-  font: 18px/1 var(--font);
-  cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.11);
-}
 
 .command-add,
 .group-link-add,
@@ -2724,8 +2575,7 @@ body {
 
 .link-group,
 .recording-library,
-.recording-detail,
-.priority-card { border-radius: var(--r-tile); }
+.recording-detail { border-radius: var(--r-tile); }
 
 @media (max-width: 1050px) {
   .home-bento { grid-template-columns: repeat(12, minmax(0, 1fr)); }
@@ -2761,7 +2611,6 @@ body {
   42% { transform: scale(.76); }
   100% { transform: scale(1); }
 }
-
 
 /* ============ 实时录音 Strands ============ */
 .home-recorder { isolation: isolate; }
@@ -2921,18 +2770,6 @@ body {
 .todo-deadline-trigger:hover { background: rgba(255,255,255,.075); color: var(--text-2); }
 .todo-deadline-trigger.selected { color: var(--text-2); }
 .todo-deadline-trigger.invalid { box-shadow: inset 0 0 0 1px rgba(255,95,87,.72), 0 0 0 3px rgba(255,95,87,.08); }
-.todo-editor-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 22px;
-  border-radius: inherit;
-  background: rgba(4,4,6,.62);
-  backdrop-filter: blur(22px) saturate(.82);
-}
-.todo-editor-backdrop[hidden] { display: none; }
 .todo-editor-card {
   width: 372px;
   padding: 18px;
@@ -2948,9 +2785,6 @@ body {
 .todo-editor-card header strong { color: var(--text-1); font-size: 15px; }
 .todo-editor-card header span { color: var(--text-3); font: 10px var(--font-mono); }
 .todo-editor-card header button { width: 28px; height: 28px; border: 0; border-radius: 10px; background: rgba(255,255,255,.055); color: var(--text-2); cursor: pointer; }
-.todo-editor-name { display: flex; flex-direction: column; gap: 6px; margin-bottom: 13px; }
-.todo-editor-name span { color: var(--text-3); font-size: 9px; }
-.todo-editor-name input { height: 38px; padding: 0 11px; border: 0; border-radius: 12px; outline: none; background: rgba(255,255,255,.06); color: var(--text-1); font: 12px var(--font); }
 .todo-calendar-week,
 .todo-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
 .todo-calendar-week { margin-bottom: 5px; color: var(--text-4); font: 9px var(--font); text-align: center; }
@@ -2971,8 +2805,8 @@ body {
 .home-recorder .recorder-controls { position: absolute; left: 15px; right: auto; bottom: 14px; justify-content: flex-start; }
 
 /* Tab 横跨面板，并在物理顶部条位置留出安全空槽；功能全开时自然分成左右两组。 */
-.topbar { position: relative; }
 .topbar {
+  position: relative;
   display: block;
   padding: 2px 4px;
 }
@@ -2984,16 +2818,8 @@ body {
   max-width: none;
 }
 .tabs .tab[data-tab='links'] { margin-right: 240px; }
-.topbar-actions { position: absolute; top: 0; right: 0; z-index: 7; }
 
 .link-favicon img { width: 100%; height: 100%; border-radius: inherit; object-fit: contain; }
-.note-library { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; gap: 6px; padding: 4px; overflow-y: auto; background: var(--home-note-surface); }
-.note-library[hidden] { display: none; }
-.note-library > button { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 0; border-radius: 11px; background: rgba(255,255,255,.04); color: var(--text-2); text-align: left; cursor: pointer; }
-.note-library > button:hover { background: rgba(255,255,255,.075); }
-.note-library strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
-.note-library time { flex: 0 0 auto; color: var(--text-4); font: 8px var(--font-mono); }
-.note-library-empty { margin: auto; color: var(--text-4); font-size: 10px; }
 
 /* 迷你尺寸使用摘要视图，保留可辨识性而不让内容被硬裁切。 */
 .home-bento > [data-widget-size='mini'] { min-width: 0; min-height: 0; padding: 10px; border-radius: 18px; }
@@ -3012,7 +2838,6 @@ body {
 .home-recorder[data-widget-size='mini'] .recorder-controls { left: 10px; bottom: 8px; transform: scale(.78); transform-origin: left bottom; }
 
 /* ============ 时间电量与统一多选 ============ */
-.todo-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .todo-battery {
   position: relative;
   width: 68px;
@@ -3330,8 +3155,6 @@ body {
 }
 .tabs .tab[data-tab='links'] { margin-right: 0; }
 .tabs.is-split .tab-split-start { margin-left: auto; }
-.topbar-mid { position:absolute; inset:4px 8px auto auto; z-index:6; }
-.topbar-actions { display: none !important; }
 
 /* 模块尺寸按钮固定在右下角，避免争夺标题区。 */
 .widget-size-control,
@@ -3356,18 +3179,6 @@ body {
   font-size: 8px;
   line-height: 1.35;
 }
-
-/* 密钥修改属于右侧详情上下文，不再复用左侧新增表单。 */
-.credential-inline-editor { margin:0 0 12px; padding:12px; display:grid; grid-template-columns:1fr auto; gap:10px 12px; border-radius:16px; background:rgba(111,145,222,.09); box-shadow:inset 0 0 0 1px rgba(125,164,246,.22); }
-.credential-inline-editor[hidden] { display:none; }
-.credential-inline-head { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; }
-.credential-inline-head strong { color:var(--text-1); font-size:12px; }
-.credential-inline-head button { border:0; background:transparent; color:var(--text-3); cursor:pointer; }
-.credential-inline-fields { min-width:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-.credential-inline-fields label { min-width:0; display:flex; flex-direction:column; gap:4px; }
-.credential-inline-fields span { color:var(--text-4); font-size:8px; }
-.credential-inline-fields input { width:100%; height:32px; padding:0 9px; border:0; border-radius:10px; outline:none; background:rgba(255,255,255,.055); color:var(--text-1); }
-.credential-inline-editor > button { align-self:end; }
 
 /* ============ Slate · final compact component pass ============ */
 .shortcut-recorder {
@@ -3464,36 +3275,6 @@ body {
 .home-note[data-widget-size='mini'] .note-save-btn { display: grid; }
 .home-note[data-widget-size='mini'] .note-toolbar .tile-label { font-size: 8px; }
 .home-note[data-widget-size='mini'] .note-persist-actions { transform: scale(.76); transform-origin: right center; }
-.note-library { padding: 2px; }
-.note-library-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  align-items: center;
-  gap: 5px;
-  border-radius: 12px;
-  background: rgba(255,255,255,.04);
-}
-.note-library-row > button {
-  min-width: 0;
-  min-height: 34px;
-  border: 0;
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-}
-.note-library-row > button:first-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 9px;
-  text-align: left;
-}
-.note-library-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
-.note-library-row time { flex: 0 0 auto; color: var(--text-4); font: 8px var(--font-mono); }
-.note-library-delete { display: grid; place-items: center; border-radius: 9px !important; color: var(--text-4) !important; }
-.note-library-delete:hover { color: var(--p0) !important; background: rgba(255,95,87,.1) !important; }
-.note-library-delete svg { width: 13px; height: 13px; }
 
 .todo-date-popover { width: 224px; }
 .todo-date-popover .todo-editor-card {
@@ -3514,15 +3295,6 @@ body {
 .todo-date-popover .todo-time-row > span { display: none; }
 .todo-date-popover .todo-time-row select { width: 58px; height: 29px; border-radius: 9px; font-size: 10px; }
 .todo-date-popover #todo-editor-error { min-height: 0; margin: 5px 0 0; font-size: 8px; }
-.module-effect-canvas {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  pointer-events: none;
-}
 
 /* 非首页纵向列表采用 Line Sidebar 的邻近度反馈。 */
 .line-sidebar-list {
@@ -3593,10 +3365,7 @@ body {
 .todo-item,
 .link-item,
 .recording-item,
-.credential-item,
-.note-library-row {
-  border-radius: var(--r-list-item);
-}
+
 .todo-date-popover .todo-editor-card,
 .shortcut-recorder,
 .transcription-settings-card {
@@ -3608,17 +3377,9 @@ body {
   overflow: hidden;
 }
 .note-input,
-.note-preview,
-.note-library {
+.note-preview {
   border-radius: inherit;
 }
-.note-library {
-  inset: 0;
-  padding: 4px;
-  overflow: hidden auto;
-  background: var(--home-note-surface);
-}
-.note-library-row { overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   .line-sidebar-list [data-line-sidebar-item] { transform: none; }
