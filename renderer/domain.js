@@ -388,6 +388,7 @@
 
   function todoBelongsToView(item, view, now = new Date()) {
     if (!item || typeof item !== 'object') return false;
+    const nowDate = now instanceof Date ? now : new Date(now);
     const isDone = item.done === true;
     if (view === 'done') return isDone;
     if (isDone) return false;
@@ -396,12 +397,12 @@
     if (view === 'today') {
       if (item.pinnedToday === true) return true;
       if (!hasDeadline) return false;
-      const endOfTomorrow = startOfDay(now).getTime() + 24 * 60 * 60 * 1000;
+      const endOfTomorrow = startOfDay(nowDate).getTime() + 24 * 60 * 60 * 1000;
       return deadlineTime < endOfTomorrow; // 今天到期或已过期
     }
     if (view === 'upcoming') {
       if (!hasDeadline) return false;
-      const endOfTomorrow = startOfDay(now).getTime() + 24 * 60 * 60 * 1000;
+      const endOfTomorrow = startOfDay(nowDate).getTime() + 24 * 60 * 60 * 1000;
       return deadlineTime >= endOfTomorrow;
     }
     if (view === 'inbox') {
@@ -496,11 +497,13 @@
   }
 
   // 到期状态徽标：已过期 / 剩余分钟 / 小时 / 天。无截止时间返回 null。
+  // now 接受 Date 或时间戳（历史上两种调用方式都出现过，这里做兼容）。
   function todoDueChip(item, now = new Date()) {
     if (!item || item.done === true) return null;
     const deadlineTime = Date.parse(String(item.deadline || ''));
     if (!Number.isFinite(deadlineTime)) return null;
-    const diff = deadlineTime - now.getTime();
+    const nowMs = now instanceof Date ? now.getTime() : Number(now);
+    const diff = deadlineTime - nowMs;
     if (diff < 0) return { label: '已过期', tone: 'red' };
     const minutes = Math.floor(diff / 60000);
     if (minutes < 1) return { label: '就到现在', tone: 'red' };

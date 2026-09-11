@@ -291,7 +291,7 @@ function todoItemHtml(bucket, item) {
     : '';
   const toggleLabel = item.done ? `恢复未完成：${safeText}` : `标记完成：${safeText}`;
   // 到期状态用文字徽标（剩余时间/已过期）替代百分比进度条——新手一眼能懂。
-  const due = window.SlateDomain.todoDueChip(item, Date.now());
+  const due = window.SlateDomain.todoDueChip(item, new Date());
   const dueChip = due ? `<span class="todo-due" data-tone="${due.tone}">${escapeHtml(due.label)}</span>` : '';
   const categoryName = todoCategoryNames[bucket] || bucket;
   const categoryChip = todoView === 'done'
@@ -388,7 +388,14 @@ function renderList(priority, options = {}) {
   const list = document.getElementById('todo-list');
   if (!list) return;
   const items = visibleTodos();
-  list.innerHTML = items.map((item) => todoItemHtml(item.bucket, item)).join('');
+  // 单条渲染异常不允许拖垮整个视图（否则切换视角时界面会卡在旧状态）
+  list.innerHTML = items.map((item) => {
+    try {
+      return todoItemHtml(item.bucket, item);
+    } catch (error) {
+      return `<li class="todo-item" data-id="${escapeHtml(item.id)}" data-priority="${escapeHtml(item.bucket)}"><button class="checkbox" type="button" data-action="toggle" aria-label="标记完成">${checkSvg()}</button><button class="todo-copy" type="button" data-action="edit"><span class="todo-text">${escapeHtml(item.text)}</span></button></li>`;
+    }
+  }).join('');
   updateViewCounts();
   updateTodoBulkButton();
   animateTodoOrder(options.previousPositions);
@@ -1388,9 +1395,13 @@ function applyDefaultTodoDeadline(trigger, now = new Date()) {
 
 function resetTodoDraftDeadline(trigger, now = new Date()) {
   if (!trigger) return;
+  // 视角化待办：快速添加默认无日期（进收件箱），提交后清空草稿即可，
+  // 不再回填「今天 23:30」默认值。
   delete trigger.dataset.deadline;
   delete trigger.dataset.deadlineSource;
-  applyDefaultTodoDeadline(trigger, now);
+  trigger.classList.remove('selected');
+  const label = trigger.querySelector('span');
+  if (label) label.textContent = '日期';
 }
 
 function refreshDefaultTodoDeadlines(now = new Date()) {
