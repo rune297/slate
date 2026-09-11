@@ -230,7 +230,7 @@ const TOP_REVEAL_SENSOR_H = 240; // 穿透感应层高度，需大于手势位�
 // 一次纹丝不动的点击它完全看不见。所以这里补一条不依赖焦点的判定：
 // 光标离开面板范围并停留够久 → 收起。点击照常落到下面的应用，不会被吞掉。
 const DISMISS_POLL_MS = 90; // 判定轮询间隔
-const DISMISS_ON_LEAVE = true; // 移开即收起；关掉则只保留失焦/按外部收起
+const DISMISS_ON_LEAVE = false; // 光标移开不再收起：用户预期是「点在窗口外面才收」，不是「移开就关」。收起只靠按外部穿透层 + 失焦（带面板内保护）。
 const DISMISS_OUTSIDE_DWELL_MS = 300; // 光标离开面板后持续多久自动收起
 const DISMISS_GRACE_MS = 600; // 展开后这段时间内不做离开判定（给入场动画留时间）
 const DISMISS_EDGE_MARGIN_PX = 16; // 面板边界外扩容差，贴边微动不算离开
@@ -721,12 +721,19 @@ function tickDismissPolling() {
     return;
   }
 
-  // ① 焦点路径：面板确实拿到过焦点、后来又丢了（点到别的窗口）→ 立刻收起。
-  //    这条补的是 blur 事件可能漏发的情况，不取代 blur 本身。
+  // ① 焦点路径：面板确实拿到过焦点、后来又丢了（点到别的窗口）→ 收起。
+  //    但有一个例外：焦点丢了、光标却还落在面板矩形内 —— 这是点在了面板的
+  //    透明留白上，点击穿透到了背后的窗口。用户预期「点在窗口里不收起」，
+  //    这种情况保持展开，等真正点在面板外时再收。
   if (mainWindow.isFocused()) {
     panelHadFocus = true;
   } else if (panelHadFocus) {
     panelHadFocus = false;
+    const cursor = screen.getCursorScreenPoint();
+    if (isPointInPanel(cursor.x, cursor.y, DISMISS_EDGE_MARGIN_PX)) {
+      debugLog('focus-lost but cursor inside panel, keep open');
+      return;
+    }
     debugLog('collapse: focus-lost');
     requestRendererCollapse();
     return;
@@ -783,6 +790,7 @@ function handleDismissMove(payload) {
   const point = screen.getCursorScreenPoint();
   if (isPointInPanel(point.x, point.y)) return; // 面板内的按下是正常操作
   // 面板外按下：立刻收起。点击本身穿透到下面的应用，照常作用到目标。
+  debugLog('collapse: press-outside');
   requestRendererCollapse();
 }
 
