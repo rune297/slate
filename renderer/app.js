@@ -7,7 +7,20 @@ const TODO_CATEGORY_DEFAULTS = {
   P3: '日常',
 };
 // 分类列表动态化：默认 4 个，可增删。id 稳定（存储桶键），名字可改。
-let PRIORITIES = ['P0', 'P1', 'P2', 'P3'];
+// 列表本身持久化在 localStorage（v2），重启后自建分类不丢。
+const TODO_CATEGORY_LIST_KEY = 'slate-todo-categories-v2';
+function loadTodoCategories() {
+  try {
+    const list = JSON.parse(localStorage.getItem(TODO_CATEGORY_LIST_KEY) || 'null');
+    if (Array.isArray(list) && list.length && list.every((id) => typeof id === 'string' && id)) {
+      return [...new Set(list)];
+    }
+  } catch (error) {
+    /* 损坏则回退默认 */
+  }
+  return ['P0', 'P1', 'P2', 'P3'];
+}
+let PRIORITIES = loadTodoCategories();
 // 分类圆点调色板（按序取色，新增分类自动获得颜色）
 const CATEGORY_COLORS = ['#d84038', '#e07a2e', '#1d9e63', '#2f6fdb', '#8a5cd6', '#0f8a8a', '#b8860b'];
 
@@ -228,6 +241,7 @@ function loadTodoCategoryNames() {
 function persistTodoCategoryNames() {
   try {
     localStorage.setItem(TODO_CATEGORY_KEY, JSON.stringify(todoCategoryNames));
+    localStorage.setItem(TODO_CATEGORY_LIST_KEY, JSON.stringify(PRIORITIES));
   } catch (error) {
     // LocalStorage 不可用时仍保留当前会话中的分类名。
   }
