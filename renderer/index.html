@@ -8,6 +8,7 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Slate</title>
+    <script src="theme-bootstrap.js"></script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -440,6 +441,14 @@
                       <option value="credentials">密钥</option>
                       <option value="clip">剪贴板</option>
                       <option value="settings">设置</option>
+                    </select>
+                  </label>
+                  <label class="settings-device-row settings-appearance-row">
+                    <div><span>外观</span><strong>面板配色</strong></div>
+                    <select id="settings-appearance" aria-label="外观主题">
+                      <option value="light">浅色</option>
+                      <option value="dark">深灰</option>
+                      <option value="auto">跟随系统</option>
                     </select>
                   </label>
                   <div class="settings-device-row settings-workspace-row">

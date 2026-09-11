@@ -1710,6 +1710,27 @@
     renderSettingsPanel();
     setSettingsNote(`下次唤出将默认显示${settingsDefaultTab.selectedOptions[0]?.textContent || '所选页面'}。`);
   });
+
+  // ============ 外观主题（浅色 / 深灰 / 跟随系统）============
+  const settingsAppearance = document.getElementById('settings-appearance');
+  const applyAppearance = (pref) => {
+    const dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+  };
+  if (settingsAppearance) {
+    settingsAppearance.value = localStorage.getItem('slate-appearance') || 'light';
+    settingsAppearance.addEventListener('change', () => {
+      const pref = settingsAppearance.value || 'light';
+      localStorage.setItem('slate-appearance', pref);
+      applyAppearance(pref);
+      setSettingsNote(`外观已切换为${settingsAppearance.selectedOptions[0]?.textContent || '所选主题'}。`);
+    });
+    // 跟随系统时，系统配色变化实时生效
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if ((localStorage.getItem('slate-appearance') || 'light') === 'auto') applyAppearance('auto');
+    });
+  }
   settingsWorkspaceOpen?.addEventListener('click', () => {
     window.slateAPI?.openWorkspace?.().catch(() => setSettingsNote('无法打开数据文件夹。', true));
   });
