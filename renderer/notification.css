@@ -16,14 +16,10 @@
   /* 颜色 */
   --color-transparent: transparent;
   --color-shell: #000000;
-  --color-shell-hover: #080808;
-  --color-surface: #191919;
   --color-border: rgba(255, 255, 255, 0.09);
-  --color-border-strong: rgba(255, 255, 255, 0.13);
   --color-text-primary: #f5f5f5;
   --color-text-secondary: #a1a1a1;
   --color-text-tertiary: #707070;
-  --color-success: #30d978;
   --color-focus: rgba(255, 255, 255, 0.22);
 
   /* 字体 */
@@ -42,10 +38,7 @@
   --space-1: 2px;
   --space-2: 4px;
   --space-3: 6px;
-  --space-4: 8px;
-  --space-5: 10px;
   --space-6: 12px;
-  --space-7: 16px;
   --content-padding-top: 8px;
   --content-padding-bottom: 9px;
   --content-padding-inline: 16px;

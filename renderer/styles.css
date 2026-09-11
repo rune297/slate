@@ -1,24 +1,24 @@
 :root {
-  /* ============ 颜色 · 黑白灰主体 + 少量状态色 ============ */
-  --bg-base: #000000;
-  --surface-1: #111111;
-  --surface-2: #191919;
-  --surface-3: #252525;
-  --hairline: rgba(255, 255, 255, 0.08);
-  --hairline-soft: rgba(255, 255, 255, 0.06);
+  /* ============ 颜色 · Mac Bento premium surface（黑灰主体 + 少量状态色）============ */
+  --bg-base: #050506;
+  --surface-1: rgba(24, 24, 27, 0.88);
+  --surface-2: rgba(39, 39, 43, 0.72);
+  --surface-3: rgba(58, 58, 64, 0.72);
+  --hairline: rgba(255, 255, 255, 0.12);
+  --hairline-soft: rgba(255, 255, 255, 0.075);
   --squircle-highlight: rgba(255, 255, 255, 0.16);
 
-  --text-1: #F5F5F5;
-  --text-2: #A1A1A1;
-  --text-3: #707070;
-  --text-4: #4A4A4A;
+  --text-1: #f7f7f8;
+  --text-2: #b4b4bb;
+  --text-3: #7b7b84;
+  --text-4: #54545c;
   --focus-ring: #6EA8FF;
 
   --scrollbar-thumb: rgba(255, 255, 255, 0.08);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
   --tooltip-bg: rgba(0, 0, 0, 0.92);
   --item-hover: rgba(255, 255, 255, 0.04);
-  --panel-shadow: rgba(0, 0, 0, 0.42);
+  --panel-shadow: rgba(0, 0, 0, 0.64);
 
   /* 参考界面只用少量高亮色；大面积模块统一为黑灰。 */
   --accent-green: #30D978;
@@ -42,10 +42,10 @@
 
   /* ============ 圆角 ============ */
   --r-slate: 10px;
-  --r-panel: 16px;
-  --r-tile: 18px;
-  --r-squircle: 12px;
-  --r-input: 10px;
+  --r-panel: 28px;
+  --r-tile: 22px;
+  --r-squircle: 14px;
+  --r-input: 13px;
   --r-list-item: 12px;
   --r-popover: 18px;
   --r-pill: 999px;
@@ -2218,24 +2218,8 @@ body {
 
 }
 
-/* ============ Mac Bento · premium surface system ============ */
-:root {
-  --bg-base: #050506;
-  --surface-1: rgba(24, 24, 27, 0.88);
-  --surface-2: rgba(39, 39, 43, 0.72);
-  --surface-3: rgba(58, 58, 64, 0.72);
-  --hairline: rgba(255, 255, 255, 0.12);
-  --hairline-soft: rgba(255, 255, 255, 0.075);
-  --text-1: #f7f7f8;
-  --text-2: #b4b4bb;
-  --text-3: #7b7b84;
-  --text-4: #54545c;
-  --r-panel: 28px;
-  --r-tile: 22px;
-  --r-squircle: 14px;
-  --r-input: 13px;
-  --panel-shadow: rgba(0, 0, 0, 0.64);
-}
+/* ============ Mac Bento · premium surface system ============
+   颜色 / 圆角 / 阴影令牌统一在文件顶部 :root 定义，此处只保留 surface 的描边与玻璃实现。 */
 
 .panel::before {
   background:
