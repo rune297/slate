@@ -55,12 +55,12 @@ const {
   createForegroundMediaPermissionCoordinator,
 } = require('./main-services');
 
-// Keep the historical data directory so upgrading users retain notes, links,
-// recordings and encrypted settings after the public product rename.
-const LEGACY_USER_DATA_PATH = path.join(app.getPath('appData'), 'Slate');
+// 用户数据固定放在 %APPDATA%\Slate：待办、速记、链接、录音与加密后的密钥都存这里，
+// 与应用安装目录解耦，覆盖安装或换盘重装都不会丢数据。
+const USER_DATA_PATH = path.join(app.getPath('appData'), 'Slate');
 app.setName('Slate');
-// Honor Electron's standard profile switch for isolated automated tests.
-app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || LEGACY_USER_DATA_PATH);
+// 自动化测试用 Electron 标准的 --user-data-dir 指定独立档位，避免污染真实数据。
+app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || USER_DATA_PATH);
 
 // ============ 托盘图标 PNG 生成 ============
 // 直接在主进程编码 PNG，避免引入额外资源文件
