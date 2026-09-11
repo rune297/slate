@@ -33,7 +33,6 @@
 
   --home-note-surface: var(--surface-1);
   --home-mirror-surface: var(--surface-1);
-  --home-clip-surface: var(--surface-1);
 
   /* 剪贴板卡片：类型只通过浅描边区分，卡片尺寸统一。 */
   --clip-text: rgba(255, 255, 255, 0.18);   /* 文字：中性微亮，几乎无色 */
@@ -571,23 +570,12 @@ body {
 }
 
 /* ============ 首页 · 中心镜子工作台 ============ */
+/* 栅格几何统一由后段 .home-bento 的 12x4 定义，模块落位由脚本写入行内样式。 */
 .home-bento {
   display: grid;
-  grid-template-columns: 190px 270px minmax(280px, 1fr) 230px;
-  grid-template-rows: var(--home-mirror-size) minmax(0, 1fr);
-  grid-template-areas:
-    "clock windows mirror commands"
-    "recorder windows note commands";
   gap: var(--s-3);
   height: 100%;
 }
-
-.home-windows  { grid-area: windows; }
-.home-recorder { grid-area: recorder; }
-.home-commands { grid-area: commands; }
-.home-note     { grid-area: note; }
-.home-mirror   { grid-area: mirror; }
-.home-clipfav  { grid-area: clipfav; }
 
 /* 速记 —— 占 1fr，填满 */
 .home-note {
@@ -1125,142 +1113,6 @@ body {
 
 .home-mirror.live .mirror-hint {
   visibility: hidden;
-}
-
-/* ============ 首页 · 收藏剪贴竖列 ============ */
-.home-clipfav {
-  padding: var(--s-3);
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  background: var(--home-clip-surface);
-}
-
-.clipfav-list {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-  align-items: stretch;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.clipfav-list::-webkit-scrollbar {
-  width: 3px;
-}
-
-.clipfav-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.clipfav-list::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 2px;
-}
-
-.clipfav-list::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-}
-
-/* 空态提示 */
-.clipfav-empty {
-  font-size: 11.5px;
-  font-weight: 400;
-  color: var(--text-4);
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-  padding: var(--s-1) var(--s-2);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: color var(--d-fast) var(--ease);
-}
-
-.clipfav-empty:hover {
-  color: var(--text-2);
-}
-
-/* 每个收藏条目卡片 */
-.clipfav-item {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--s-1);
-  width: 100%;
-  max-width: none;
-  min-height: 44px;
-  padding: var(--s-2) var(--s-3);
-  background: var(--surface-2);
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--r-input);
-  cursor: pointer;
-  transition:
-    background var(--d-fast) var(--ease),
-    transform var(--d-fast) var(--ease-spring);
-  position: relative;
-  overflow: hidden;
-}
-
-.clipfav-item:hover {
-  background: var(--surface-3);
-}
-
-.clipfav-item:active {
-  transform: scale(0.95);
-}
-
-/* copied 反馈 */
-.clipfav-item.copied {
-  background: var(--surface-3);
-}
-
-/* 图片缩略图 */
-.clipfav-thumb {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  object-fit: cover;
-  border-radius: 6px;
-  pointer-events: none;
-}
-
-.clipfav-thumb-placeholder {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border-radius: 6px;
-  background: var(--surface-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  color: var(--text-4);
-  pointer-events: none;
-}
-
-/* 文字预览 */
-.clipfav-text {
-  flex: 1;
-  min-width: 0;
-  font-size: 11.5px;
-  font-weight: 400;
-  line-height: 1.4;
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: 0.1px;
-  pointer-events: none;
-  padding-left: 0;
-}
-
-/* copied 状态文字变亮 */
-.clipfav-item.copied .clipfav-text {
-  color: var(--text-1);
 }
 
 /* ============ 待办 · P0–P3 四象限 ============ */
@@ -2512,10 +2364,6 @@ body {
     padding-left: var(--s-4);
   }
 
-  .home-bento {
-    grid-template-columns: 170px 230px minmax(220px, 1fr) 200px;
-  }
-
 }
 
 @media (max-width: 900px) {
@@ -2523,10 +2371,6 @@ body {
     --home-mirror-size: 160px;
   }
 
-  .home-bento {
-    grid-template-columns: 150px 190px minmax(200px, 1fr) 180px;
-    gap: var(--s-2);
-  }
 
   .tab { padding-right: 9px; padding-left: 9px; }
   .tab-label { display: none; }
@@ -2701,13 +2545,6 @@ body {
 .home-bento > [data-widget-size='medium'] { grid-column: span 4; grid-row: span 2; }
 .home-bento > [data-widget-size='large']  { grid-column: span 4; grid-row: span 4; }
 
-.home-windows,
-.home-recorder,
-.home-commands,
-.home-note,
-.home-mirror {
-  grid-area: auto;
-}
 
 .widget-size-control {
   position: absolute;

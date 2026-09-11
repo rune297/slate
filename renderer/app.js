@@ -3000,112 +3000,6 @@ if (mirrorStage) {
   });
 }
 
-// ============ 首页 · 收藏剪贴 ============
-const clipfavListEl = document.getElementById('clipfav-list');
-
-function renderClipFavs() {
-  if (!clipfavListEl) return;
-  // 脏标记：clipHistory / clipFavorites / clipImageCache 均未变则跳过重建
-  if (clipDataVersion === lastRenderedFavsVersion) return;
-
-  // 按 clipFavorites 顺序取条目（过滤掉已删的）
-  const favEntries = clipFavorites
-    .map((id) => clipHistory.find((e) => e.id === id))
-    .filter(Boolean);
-
-  if (!favEntries.length) {
-    clipfavListEl.innerHTML =
-      '<button class="clipfav-empty" type="button" data-action="goto-clip">' +
-      '去"剪贴板"Tab 给常用记录加星 →' +
-      '</button>';
-    lastRenderedFavsVersion = clipDataVersion; // 空态也标记已渲染
-    return;
-  }
-
-  // 渲染每条收藏
-  clipfavListEl.innerHTML = favEntries
-    .map((entry) => {
-      const safeId = escapeHtml(entry.id);
-
-      if (entry.type === 'image') {
-        const dataUrl = entry.imagePath ? clipImageCache.get(entry.imagePath) : null;
-        const mediaHtml = dataUrl
-          ? `<img class="clipfav-thumb" src="${escapeHtml(dataUrl)}" alt="图片" draggable="false"/>`
-          : `<div class="clipfav-thumb-placeholder">图</div>`;
-        return (
-          `<div class="clipfav-item clip-type-image" data-id="${safeId}" role="button" tabindex="0" title="图片">` +
-          mediaHtml +
-          `<span class="clipfav-text">图片</span>` +
-          `</div>`
-        );
-      }
-
-      // text | url
-      const isUrl = entry.type === 'url' || (entry.text && CLIP_URL_RE.test(entry.text));
-      const typeClass = isUrl ? 'clip-type-url' : 'clip-type-text';
-      let preview = entry.text || '';
-      if (isUrl) {
-        try {
-          preview = new URL(entry.text).hostname || entry.text;
-        } catch (_) {
-          preview = entry.text || '';
-        }
-      }
-      const safePreview = escapeHtml(preview);
-      const safeTitle = escapeHtml(entry.text || '');
-      return (
-        `<div class="clipfav-item ${typeClass}" data-id="${safeId}" role="button" tabindex="0" title="${safeTitle}">` +
-        `<span class="clipfav-text">${safePreview}</span>` +
-        `</div>`
-      );
-    })
-    .join('');
-  lastRenderedFavsVersion = clipDataVersion; // 标记本次渲染版本
-
-  // 按需预加载图片缩略图（命中后二次渲染刷新）
-  // preloadClipImage 会自增 clipDataVersion，确保二次渲染不被脏标记挡掉
-  const missingImageEntries = favEntries.filter(
-    (e) => e.type === 'image' && e.imagePath && !clipImageCache.has(e.imagePath)
-  );
-  if (missingImageEntries.length > 0) {
-    Promise.all(missingImageEntries.map((e) => preloadClipImage(e.imagePath))).then(() => {
-      const anyLoaded = missingImageEntries.some((e) => clipImageCache.has(e.imagePath));
-      if (anyLoaded) renderClipFavs();
-    });
-  }
-}
-
-if (clipfavListEl) {
-  clipfavListEl.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    // 空态：跳转 clip Tab
-    if (e.target.closest('[data-action="goto-clip"]')) {
-      setActiveTab('clip');
-      return;
-    }
-    // 条目点击：复制
-    const item = e.target.closest('.clipfav-item[data-id]');
-    if (item) {
-      const id = item.dataset.id;
-      if (await copyClipEntry(id)) {
-        item.classList.add('copied');
-        setTimeout(() => item.classList.remove('copied'), 800);
-      }
-    }
-  });
-  clipfavListEl.addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (e.repeat) return;
-    const item = e.target.closest('.clipfav-item[data-id]');
-    if (!item) return;
-    e.preventDefault();
-    if (await copyClipEntry(item.dataset.id)) {
-      item.classList.add('copied');
-      setTimeout(() => item.classList.remove('copied'), 800);
-    }
-  });
-}
-
 // ============ 剪贴板历史 ============
 const CLIP_HISTORY_KEY = 'slate-clip-history';
 const CLIP_FAV_KEY = 'slate-clip-favorites';
@@ -3174,12 +3068,11 @@ let clipFavorites = loadClipFavorites();
 let clipFilter = 'all'; // all | text | image | faved
 const clipImageCache = new Map(); // imagePath -> dataUrl，仅内存
 
-// 脏标记 —— 单调递增版本号：凡影响 renderClipList / renderClipFavs 输出的变更都自增。
+// 脏标记 —— 单调递增版本号：凡影响 renderClipList 输出的变更都自增。
 // 宁可多自增（多一次重建）也不能漏（界面不更新）。
 // 注意：preloadClipImage 在图片入缓存后也要自增，确保二次渲染不被脏标记挡掉。
 let clipDataVersion = 0;
 let lastRenderedClipVersion = -1; // renderClipList 上次渲染时的版本号
-let lastRenderedFavsVersion = -1; // renderClipFavs 上次渲染时的版本号
 
 const clipListEl = document.getElementById('clip-list');
 const clipToolbarEl = document.getElementById('clip-toolbar');
@@ -3239,7 +3132,6 @@ async function addClipEntry(raw) {
 
   clipDataVersion++; // clipHistory 已变（含 FIFO 淘汰）
   renderClipList();
-  renderClipFavs();
 }
 
 function formatClipTime(ts) {
@@ -3426,7 +3318,6 @@ function toggleClipFavorite(id, focusContext = null) {
   clipDataVersion++; // clipFavorites 已变
   saveClipFavorites(clipFavorites);
   renderClipList();
-  renderClipFavs();
   if (focusContext && focusContext.restoreFocus) {
     const sameItemButton = clipListEl && clipListEl.querySelector(
       `.clip-item[data-id="${CSS.escape(id)}"] [data-action="fav"]`
@@ -3450,7 +3341,6 @@ function deleteClipEntry(id, focusContext = null) {
   saveClipHistory(clipHistory);
   saveClipFavorites(clipFavorites);
   renderClipList();
-  renderClipFavs();
   if (focusContext && focusContext.restoreFocus) {
     focusClipControl([focusContext.nextId, focusContext.previousId]);
   }
@@ -3467,7 +3357,6 @@ function deleteClipEntry(id, focusContext = null) {
       saveClipHistory(clipHistory);
       saveClipFavorites(clipFavorites);
       renderClipList();
-      renderClipFavs();
       focusClipControl([id]);
       showStatusToast('已撤销删除');
     },
@@ -3533,7 +3422,6 @@ function clearClipHistory() {
     window.slateAPI.deleteClipImages(imagePaths).catch(() => {});
   }
   renderClipList();
-  renderClipFavs();
   showStatusToast(`已清空 ${removedCount} 条剪贴记录`);
 }
 
@@ -3576,5 +3464,4 @@ if (window.slateAPI && typeof window.slateAPI.onNewClipEntry === 'function') {
 
 renderAll();
 renderClipList(); // 首屏确保 clip-list DOM 就绪时渲染一次（幂等）
-renderClipFavs(); // 首屏渲染收藏剪贴块
 initTab();
