@@ -7,6 +7,12 @@ const fs = require('fs');
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
+  // CI（无 Apple 证书的环境）可设 SLATE_SKIP_ADHOC_SIGN=1 跳过签名，
+  // 直接产出未签名的 dmg；本地 Mac 构建仍走下面的 ad-hoc 签名流程。
+  if (process.env.SLATE_SKIP_ADHOC_SIGN === '1') {
+    console.log('  • 跳过 ad-hoc 签名（SLATE_SKIP_ADHOC_SIGN=1）');
+    return;
+  }
 
   const appPath = path.join(
     context.appOutDir,
