@@ -85,7 +85,25 @@ async function hydratePortableWorkspace() {
       location.reload();
       return;
     }
-    setInterval(() => window.slateAPI.saveWorkspaceData(collectLocalStorageSnapshot()).catch(() => {}), 2000);
+    // Keep the recovery cadence, but avoid transmitting an unchanged workspace over IPC.
+    // Only acknowledge successful saves; failed writes are retried on the next tick.
+    let savedSignature = null;
+    let savePending = false;
+    setInterval(async () => {
+      if (savePending) return;
+      const snapshot = collectLocalStorageSnapshot();
+      const signature = JSON.stringify(snapshot);
+      if (signature === savedSignature) return;
+      savePending = true;
+      try {
+        const written = await window.slateAPI.saveWorkspaceData(snapshot);
+        if (written === true) savedSignature = signature;
+      } catch (error) {
+        // Retain the previous signature so temporary failures remain retryable.
+      } finally {
+        savePending = false;
+      }
+    }, 2000);
   } catch (error) {}
 }
 // Do not interrupt parser-loaded workspace scripts with a recovery navigation.
@@ -569,6 +587,7 @@ let isExpanded = false;
 let modeBusy = false;
 let pendingMode = null;
 let restoreSlateFocusAfterCollapse = false;
+let panelPinned = false;
 // 从折叠态展开的瞬间置 true，岛体落定后自动清除；
 // setActiveTab 读取此标志决定是否延后重活，已展开态切 Tab 不受影响。
 let _justExpanded = false;
@@ -578,7 +597,19 @@ const OPENING_SETTLE_MS = 360;
 const HEAVY_LOAD_AFTER_OPEN_MS = 360;
 
 function nextAnimationFrame() {
-  return new Promise((resolve) => requestAnimationFrame(resolve));
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(fallback);
+      resolve();
+    };
+    // 后台节流开启后，停靠在屏幕外的首个 rAF 可能被 Chromium 暂停。
+    // 用短兜底保证唤出状态机继续推进；窗口进入屏幕后仍优先使用真实帧。
+    const fallback = setTimeout(finish, 48);
+    requestAnimationFrame(finish);
+  });
 }
 
 function waitForPanelMotion() {
@@ -687,6 +718,7 @@ async function setMode(expanded) {
         if (activeTab === 'clip') renderClipList();
       }, HEAVY_LOAD_AFTER_OPEN_MS);
     } else {
+      if (panelPinned) setPanelPinned(false);
       const motion = waitForPanelMotion();
       syncPanelAccessibility(false);
       await ipcBeginCollapse();
@@ -723,6 +755,10 @@ slate.addEventListener('keydown', (e) => {
   setMode(true);
 });
 
+slate.addEventListener('click', () => {
+  setMode(!isExpanded);
+});
+
 document.addEventListener('keydown', (event) => {
   const target = event.target instanceof Element ? event.target : null;
   const editable = Boolean(target && target.closest(
@@ -754,6 +790,10 @@ panel.addEventListener('click', (e) => {
 // Escape 不会原生到达页面（被浏览器层吞掉），由主进程 before-input-event 转发
 if (window.slateAPI && typeof window.slateAPI.onEscape === 'function') {
   window.slateAPI.onEscape(() => {
+    if (globalSearch && !globalSearch.hidden) {
+      closeGlobalSearch();
+      return;
+    }
     const el = document.activeElement;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
       el.blur();
@@ -1044,6 +1084,175 @@ function openShortcutRecorder() {
 }
 window.slateAPI?.onRecordShortcut?.(openShortcutRecorder);
 document.addEventListener('slate:record-shortcut', openShortcutRecorder);
+
+// ============ 顶栏工具：临时固定 / 跨模块搜索 ============
+const panelPinButton = document.getElementById('panel-pin');
+const globalSearchOpen = document.getElementById('global-search-open');
+const globalSearch = document.getElementById('global-search');
+const globalSearchInput = document.getElementById('global-search-input');
+const globalSearchResults = document.getElementById('global-search-results');
+
+async function setPanelPinned(pinned) {
+  panelPinned = pinned === true;
+  panelPinButton?.classList.toggle('active', panelPinned);
+  panelPinButton?.setAttribute('aria-pressed', String(panelPinned));
+  panelPinButton?.setAttribute('aria-label', panelPinned ? '取消固定面板' : '固定面板');
+  panelPinButton?.setAttribute('title', panelPinned ? '已固定，点击取消' : '固定面板');
+  await window.slateAPI?.setPinned?.(panelPinned).catch(() => {});
+}
+
+panelPinButton?.addEventListener('click', () => {
+  setPanelPinned(!panelPinned);
+  showStatusToast(panelPinned ? '面板已固定，切换窗口也不会收起' : '已取消固定');
+});
+
+function parseSearchStorage(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || 'null');
+    return value ?? fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function globalSearchIndex() {
+  const rows = [];
+  Object.values(data || {}).flat().forEach((item) => {
+    if (!item?.text) return;
+    rows.push({ kind: '待办', tab: 'todo', id: item.id, label: item.text, detail: item.done ? '已完成' : item.deadline ? formatDeadline(item.deadline) : '收件箱', item });
+  });
+  loadNoteArchive().forEach((note) => {
+    const label = noteArchiveTitle(note);
+    rows.push({ kind: '笔记', tab: 'notes', id: note.id, label, detail: noteArchiveExcerpt(note), text: `${label} ${note.content || ''}` });
+  });
+  const groups = parseSearchStorage('slate-link-groups', []);
+  if (Array.isArray(groups)) groups.forEach((group) => {
+    (group?.links || []).forEach((link) => rows.push({
+      kind: '链接', tab: 'links', id: link.id, label: link.title || link.url || '未命名链接',
+      detail: group.name || link.url || '', text: `${link.title || ''} ${link.url || ''} ${group.name || ''}`,
+    }));
+  });
+  return rows;
+}
+
+function renderGlobalSearch(query = '') {
+  if (!globalSearchResults) return;
+  const normalized = String(query).trim().toLocaleLowerCase('zh-CN');
+  globalSearchResults.replaceChildren();
+  if (!normalized) {
+    const hint = document.createElement('div');
+    hint.className = 'global-search-empty';
+    hint.textContent = '输入关键词，一次查找待办、笔记和链接';
+    globalSearchResults.append(hint);
+    return;
+  }
+  const matches = globalSearchIndex().filter((row) => `${row.label} ${row.detail} ${row.text || ''}`.toLocaleLowerCase('zh-CN').includes(normalized)).slice(0, 40);
+  if (!matches.length) {
+    const empty = document.createElement('div');
+    empty.className = 'global-search-empty';
+    empty.textContent = '没有找到相关内容';
+    globalSearchResults.append(empty);
+    return;
+  }
+  matches.forEach((row, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'global-search-result';
+    button.dataset.tab = row.tab;
+    button.dataset.resultId = row.id;
+    button.dataset.resultKind = row.kind;
+    button.setAttribute('role', 'option');
+    button.tabIndex = index === 0 ? 0 : -1;
+    const kind = document.createElement('span');
+    kind.textContent = row.kind;
+    const copy = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = row.label;
+    const detail = document.createElement('small');
+    detail.textContent = row.detail || '打开查看';
+    copy.append(title, detail);
+    button.append(kind, copy);
+    globalSearchResults.append(button);
+  });
+}
+
+function openGlobalSearch() {
+  if (!globalSearch) return;
+  globalSearch.hidden = false;
+  renderGlobalSearch(globalSearchInput?.value || '');
+  requestAnimationFrame(() => globalSearchInput?.focus({ preventScroll: true }));
+}
+
+function closeGlobalSearch() {
+  if (!globalSearch) return;
+  globalSearch.hidden = true;
+  if (globalSearchInput) globalSearchInput.value = '';
+  globalSearchOpen?.focus({ preventScroll: true });
+}
+
+async function activateGlobalSearchResult(button) {
+  if (!button) return;
+  const { tab, resultId, resultKind } = button.dataset;
+  closeGlobalSearch();
+  if (resultKind === '待办') {
+    const found = findTodo(resultId);
+    if (found) {
+      todoTag = 'all';
+      todoView = ['today', 'upcoming', 'inbox', 'done'].find((view) => (
+        window.SlateDomain.todoBelongsToView(found.item, view, new Date())
+      )) || 'today';
+      document.querySelectorAll('.todo-view[data-view]').forEach((item) => item.classList.toggle('is-active', item.dataset.view === todoView));
+      document.querySelectorAll('.todo-tag[data-tag]').forEach((item) => item.classList.toggle('is-active', item.dataset.tag === 'all'));
+    }
+  } else if (resultKind === '笔记') {
+    selectedNoteId = resultId;
+    if (notesSearch) notesSearch.value = '';
+  }
+  await setActiveTab(tab);
+  if (resultKind === '待办') renderList();
+  if (resultKind === '笔记') renderNotesLibrary();
+  requestAnimationFrame(() => {
+    const target = resultKind === '待办'
+      ? document.querySelector(`.todo-item[data-id="${CSS.escape(resultId)}"] [data-action="toggle"]`)
+      : resultKind === '笔记'
+        ? document.querySelector(`[data-note-id="${CSS.escape(resultId)}"]`)
+        : document.querySelector(`[data-link-id="${CSS.escape(resultId)}"] .link-open`);
+    target?.focus({ preventScroll: true });
+    target?.closest('.todo-item, .notes-list-item, .link-item')?.classList.add('search-arrival');
+    setTimeout(() => target?.closest('.todo-item, .notes-list-item, .link-item')?.classList.remove('search-arrival'), 1200);
+  });
+}
+
+globalSearchOpen?.addEventListener('click', openGlobalSearch);
+globalSearchInput?.addEventListener('input', () => renderGlobalSearch(globalSearchInput.value));
+globalSearchResults?.addEventListener('click', (event) => activateGlobalSearchResult(event.target.closest('.global-search-result')));
+globalSearch?.addEventListener('click', (event) => {
+  if (event.target === globalSearch) closeGlobalSearch();
+});
+globalSearch?.addEventListener('keydown', (event) => {
+  const items = [...globalSearchResults.querySelectorAll('.global-search-result')];
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeGlobalSearch();
+    return;
+  }
+  if (event.key === 'Enter' && event.target === globalSearchInput && items[0]) {
+    event.preventDefault();
+    activateGlobalSearchResult(items[0]);
+    return;
+  }
+  if (!['ArrowDown', 'ArrowUp'].includes(event.key) || !items.length) return;
+  event.preventDefault();
+  const current = items.indexOf(document.activeElement);
+  const next = event.key === 'ArrowDown' ? (current + 1) % items.length : (current - 1 + items.length) % items.length;
+  items[next].focus({ preventScroll: true });
+});
+document.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k') {
+    event.preventDefault();
+    openGlobalSearch();
+  }
+});
 
 // 顶栏不再做点击收起热区：用户期望「点在窗口里就不收起」，
 // 面板展开态只靠快捷键 / Esc / 点击窗口外 / 托盘来收起。
@@ -1440,40 +1649,44 @@ function applyQuickCategoryNames() {
 }
 
 if (quickInput) {
-  const submitQuickTodo = () => {
-    const value = quickInput.value;
+  const submitQuickTodo = (input = document.getElementById('todo-quick-input')) => {
+    if (!input) return;
+    const deadlineTrigger = document.getElementById('todo-quick-deadline');
+    const categorySelect = document.getElementById('todo-quick-cat');
+    const value = input.value;
     if (!value.trim()) return;
     let text = value;
     let deadline = '';
-    if (quickDeadline?.dataset.deadline) {
-      deadline = quickDeadline.dataset.deadline; // 用户用日期选择器明确指定
+    if (deadlineTrigger?.dataset.deadline) {
+      deadline = deadlineTrigger.dataset.deadline; // 用户用日期选择器明确指定
     } else {
       const parsed = window.SlateDomain.parseQuickTodoDate(value, new Date());
       text = parsed.text;
       deadline = parsed.deadline;
     }
     if (!text.trim()) {
-      quickInput.classList.add('invalid');
+      input.classList.add('invalid');
       showStatusToast('内容不能只剩日期词');
       return;
     }
-    const bucket = quickCat?.value || 'P3';
+    const bucket = categorySelect?.value || 'P3';
     if (!addTodo(bucket, text.trim(), deadline)) {
       showStatusToast('待办保存失败，请重试');
       return;
     }
-    quickInput.value = '';
+    input.value = '';
     if (todoEditorContext?.mode === 'add') closeTodoEditor();
-    resetTodoDraftDeadline(quickDeadline);
-    quickDeadline?.classList.remove('invalid');
-    quickInput.focus({ preventScroll: true });
+    resetTodoDraftDeadline(deadlineTrigger);
+    deadlineTrigger?.classList.remove('invalid');
+    input.focus({ preventScroll: true });
   };
 
-  quickInput.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+  document.addEventListener('keydown', (e) => {
+    const input = e.target.closest?.('#todo-quick-input');
+    if (!input || e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     e.preventDefault();
     if (e.repeat) return;
-    submitQuickTodo();
+    submitQuickTodo(input);
   });
   quickDeadline?.addEventListener('click', () => openTodoEditor(quickCat?.value || 'P3'));
 }
@@ -1599,7 +1812,7 @@ function refreshTodoDefaultDeadlineKey(now = new Date()) {
 }
 
 refreshTodoDefaultDeadlineKey();
-setInterval(refreshTodoDefaultDeadlineKey, 1000);
+setInterval(refreshTodoDefaultDeadlineKey, 30_000);
 
 // ============ 首页 · Markdown 速记 ============
 // textarea 中的原始 Markdown 始终是唯一数据源；预览只用 DOM API + textContent 构建，
@@ -2547,13 +2760,13 @@ const HOME_HIDDEN_MODULES_KEY = 'slate-home-hidden-modules-v1';
 const HOME_MODULE_REGISTRY = ['launcher', 'recorder', 'windows', 'note', 'commands'];
 const unavailableHomeModules = window.SlatePlatform.capabilities(window.slateAPI?.platform || 'darwin').unavailableHomeModules;
 const effectiveHomeHidden = (hidden) => window.SlatePlatform.effectiveHiddenModules(hidden, HOME_MODULE_REGISTRY, unavailableHomeModules);
-const HOME_ORDER_DEFAULTS = ['windows', 'recorder', 'launcher', 'note', 'commands'];
+const HOME_ORDER_DEFAULTS = ['note', 'launcher', 'recorder', 'commands', 'windows'];
 const HOME_SIZE_DEFAULTS = {
-  windows: 'large',
-  recorder: 'small',
-  launcher: 'small',
-  note: 'medium',
-  commands: 'mini',
+  note: 'large',
+  launcher: 'medium',
+  recorder: 'medium',
+  commands: 'medium',
+  windows: 'medium',
 };
 const HOME_SIZE_LABELS = { mini: '迷你', small: '小', medium: '中', large: '大' };
 const homeBento = document.getElementById('home-bento');
@@ -3109,6 +3322,7 @@ let lastRenderedClipVersion = -1; // renderClipList 上次渲染时的版本号
 
 const clipListEl = document.getElementById('clip-list');
 const clipToolbarEl = document.getElementById('clip-toolbar');
+const clipSearchInput = document.getElementById('clip-search');
 const clipClearBtn = document.getElementById('clip-clear-btn');
 let clipClearArmed = false;
 
@@ -3217,14 +3431,12 @@ function clipEntryHtml(entry, faved) {
 }
 
 function getFilteredClipItems() {
-  if (clipFilter === 'all') return clipHistory;
-  if (clipFilter === 'text') return clipHistory.filter((e) => e.type === 'text' || e.type === 'url');
-  if (clipFilter === 'image') return clipHistory.filter((e) => e.type === 'image');
-  if (clipFilter === 'faved') {
-    const favSet = new Set(clipFavorites);
-    return clipHistory.filter((e) => favSet.has(e.id));
-  }
-  return clipHistory;
+  return window.SlateDomain.filterClipboardEntries(
+    clipHistory,
+    clipSearchInput?.value || '',
+    clipFilter,
+    clipFavorites,
+  );
 }
 
 function renderClipList() {
@@ -3293,6 +3505,28 @@ if (clipToolbarEl) {
     button.setAttribute('aria-pressed', String(button.classList.contains('active')));
   });
 }
+
+clipSearchInput?.addEventListener('input', () => {
+  clipDataVersion++;
+  renderClipList();
+});
+
+clipSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && clipSearchInput.value) {
+    event.preventDefault();
+    clipSearchInput.value = '';
+    clipDataVersion++;
+    renderClipList();
+    return;
+  }
+  if (event.key === 'Enter') {
+    const first = getFilteredClipItems()[0];
+    if (first) {
+      event.preventDefault();
+      copyClipEntry(first.id);
+    }
+  }
+});
 
 // ---- 列表事件委托 ----
 if (clipListEl) {

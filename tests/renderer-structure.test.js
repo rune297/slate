@@ -7,10 +7,26 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
 const workspaceJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'workspace.js'), 'utf8');
 const effectsJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'effects.js'), 'utf8');
+const mainJs = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+const hotzoneHtml = fs.readFileSync(path.join(__dirname, '..', 'hotzone.html'), 'utf8');
 
 test('clipboard rows define both favorite icons before rendering entries', () => {
   assert.match(appJs, /const starOutlineSvg\s*=/);
   assert.match(appJs, /const starFilledSvg\s*=/);
+});
+
+test('expanded hotzone captures a stationary outside press and keeps the panel above it', () => {
+  assert.match(hotzoneHtml, /ipcRenderer\.send\('dismiss:press'/);
+  assert.match(mainJs, /ipcMain\.on\('dismiss:press'/);
+  assert.match(mainJs, /hotzoneWindow\.setIgnoreMouseEvents\(false\)/);
+  assert.match(mainJs, /mainWindow\.moveTop\(\)/);
+  assert.match(mainJs, /function handleDismissPress\(payload\)/);
+});
+
+test('clipboard toolbar exposes an instant text and URL search field', () => {
+  assert.match(html, /id="clip-search"/);
+  assert.match(appJs, /filterClipboardEntries/);
+  assert.match(appJs, /clipSearchInput\?\.addEventListener\('input'/);
 });
 
 test('notes have a dedicated top-level tab and management panel', () => {

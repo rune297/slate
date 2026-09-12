@@ -1,22 +1,23 @@
 {
   "name": "slate",
   "version": "1.1.0",
-  "description": "Slate - a Windows-first desktop workspace that pulls down from the top edge",
+  "description": "Slate - a lightweight desktop workspace that pulls down from the top edge",
   "main": "main.js",
   "author": "Rune",
   "license": "MIT",
-  "homepage": "https://github.com/Rune/slate",
+  "homepage": "https://github.com/chenxiangrun297-svg/slate",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Rune/slate.git"
+    "url": "git+https://github.com/chenxiangrun297-svg/slate.git"
   },
   "bugs": {
-    "url": "https://github.com/Rune/slate/issues"
+    "url": "https://github.com/chenxiangrun297-svg/slate/issues"
   },
   "keywords": [
     "electron",
     "productivity",
     "windows",
+    "macos",
     "todo",
     "workspace"
   ],
@@ -48,7 +49,6 @@
       "main-services.js",
       "platform.js",
       "hotzone.html",
-      "dismiss.html",
       "build/slate-icon.png",
       "preload.js",
       "renderer/**/*",
@@ -81,7 +81,6 @@
         "LSUIElement": true,
         "NSHighResolutionCapable": true,
         "CFBundleDisplayName": "Slate",
-        "NSMicrophoneUsageDescription": "Slate 需要使用麦克风进行录音与实时转写。",
         "NSMicrophoneUsageDescription": "Slate 需要使用麦克风来录音并生成转写文本。",
         "NSAppleEventsUsageDescription": "Slate 需要控制「系统事件」来枚举并聚焦当前窗口。"
       }

@@ -226,9 +226,9 @@ const TOP_REVEAL_SENSOR_H = 240; // 穿透感应层高度，需大于手势位�
 // ===== 收起判定（不依赖窗口焦点）=====
 // 关键点：手势唤出时本进程没有收到任何键盘/鼠标输入，Windows 会拒绝
 // SetForegroundWindow，面板其实**没有焦点** —— 于是「点到别处 → 失焦 → 收起」这条链路
-// 根本不会触发（没有焦点就没有 blur）。穿透层又只能在「按住键并移动」时读到 buttons，
-// 一次纹丝不动的点击它完全看不见。所以这里补一条不依赖焦点的判定：
-// 光标离开面板范围并停留够久 → 收起。点击照常落到下面的应用，不会被吞掉。
+// 根本不会触发（没有焦点就没有 blur）。收起态的穿透层也只能在「按住键并移动」时
+// 读到 buttons，一次纹丝不动的点击完全看不见。展开态因此让同一感应层接收面板外
+// 按下，第一次点击即可收起；光标轮询继续作为窗口层级异常时的兜底。
 const DISMISS_POLL_MS = 90; // 判定轮询间隔
 const DISMISS_ON_LEAVE = false; // 光标移开不再收起：用户预期是「点在窗口外面才收」，不是「移开就关」。收起只靠按外部穿透层 + 失焦（带面板内保护）。
 const DISMISS_OUTSIDE_DWELL_MS = 300; // 光标离开面板后持续多久自动收起
@@ -237,9 +237,9 @@ const DISMISS_EDGE_MARGIN_PX = 16; // 面板边界外扩容差，贴边微动不
 // 唤出瞬间光标理应落在面板内。若它一开始就在面板外（任务栏置顶等布局），
 // 这段时间内不做「移开」判定，避免面板刚展开就自己关掉。
 const DISMISS_ASSUME_INSIDE_MS = 2500;
-// 排障用：把收起相关事件写进 userData/dismiss-debug.log（默认开着，方便定位；
-// 不需要时改成 false 即可，不会产生任何额外开销）。
-const DISMISS_DEBUG = true;
+// 排障用：设置 SLATE_DISMISS_DEBUG=1 后写入 userData/dismiss-debug.log。
+// 默认关闭，减少常驻应用的诊断日志写入。
+const DISMISS_DEBUG = process.env.SLATE_DISMISS_DEBUG === '1';
 
 const CLIP_POLL_INTERVAL_MS = 500;
 // 大图从系统 ClipboardItem 复制到进程仍有固定成本；图片探测降到 3 秒一次，
@@ -291,7 +291,7 @@ let topRevealTimer = null;
 let topRevealDwellSince = 0;
 let hotzoneWindow = null;
 let hotzoneGesture = null;
-let dismissWindow = null;
+let panelPinned = false;
 let dismissPollTimer = null;
 let dismissOutsideSince = 0;
 let dismissExpandedAt = 0;
@@ -445,7 +445,6 @@ function applyMode(mode, display) {
   mainWindow.setIgnoreMouseEvents(false);
   currentMode = mode;
   setHotzoneEnabled(mode !== 'expanded');
-  setDismissEnabled(mode === 'expanded', display);
   if (mode === 'expanded') {
     dismissExpandedAt = Date.now();
     dismissOutsideSince = 0;
@@ -619,69 +618,22 @@ function positionHotzoneWindow(display) {
 function setHotzoneEnabled(enabled) {
   if (!hotzoneWindow || hotzoneWindow.isDestroyed()) return;
   if (enabled) {
+    hotzoneWindow.setIgnoreMouseEvents(true, { forward: true });
     positionHotzoneWindow();
     if (!hotzoneWindow.isVisible()) hotzoneWindow.show();
-  } else if (hotzoneWindow.isVisible()) {
-    hotzoneWindow.hide();
-  }
-}
-
-// ---- 面板外按下即收起（全屏穿透层）----
-// 只靠窗口失焦不可靠：面板是 screen-saver 层级，点到某些目标时焦点未必真的交出去。
-// 于是铺一层全屏透明、点击穿透的窗口 —— 点击照常落到下面的应用，
-// 但鼠标移动消息会转发进来，一旦在面板矩形之外读到按键按下，立刻收起。
-function createDismissWindow() {
-  if (!TOP_REVEAL_ENABLED || TOP_REVEAL_MODE === 'off') return;
-  if (dismissWindow && !dismissWindow.isDestroyed()) return;
-  dismissWindow = new BrowserWindow({
-    x: 0,
-    y: 0,
-    width: 1,
-    height: 1,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    resizable: false,
-    movable: false,
-    hasShadow: false,
-    skipTaskbar: true,
-    focusable: false,
-    fullscreenable: false,
-    minimizable: false,
-    maximizable: false,
-    show: false,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      backgroundThrottling: false,
-    },
-  });
-  dismissWindow.setAlwaysOnTop(true, 'screen-saver');
-  dismissWindow.setIgnoreMouseEvents(true, { forward: true });
-  dismissWindow.loadFile(path.join(__dirname, 'dismiss.html'));
-  dismissWindow.on('closed', () => {
-    dismissWindow = null;
-  });
-}
-
-function positionDismissWindow(display) {
-  if (!dismissWindow || dismissWindow.isDestroyed()) return;
-  const d = display || getWindowDisplay();
-  dismissWindow.setBounds({
-    x: d.bounds.x,
-    y: d.bounds.y,
-    width: d.bounds.width,
-    height: d.bounds.height,
-  });
-}
-
-function setDismissEnabled(enabled, display) {
-  if (!dismissWindow || dismissWindow.isDestroyed()) return;
-  if (enabled) {
-    positionDismissWindow(display);
-    if (!dismissWindow.isVisible()) dismissWindow.show();
-  } else if (dismissWindow.isVisible()) {
-    dismissWindow.hide();
+  } else {
+    // 展开态复用同一个透明感应窗覆盖当前屏幕并接收面板外按压。
+    // 主面板保持在它上方，所以面板内点击仍直接进入主窗口。
+    const d = getWindowDisplay();
+    hotzoneWindow.setBounds({
+      x: d.bounds.x,
+      y: d.bounds.y,
+      width: d.bounds.width,
+      height: d.bounds.height,
+    });
+    hotzoneWindow.setIgnoreMouseEvents(false);
+    if (!hotzoneWindow.isVisible()) hotzoneWindow.showInactive();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.moveTop();
   }
 }
 
@@ -711,6 +663,7 @@ function tickDismissPolling() {
     dismissOutsideSince = 0;
     return;
   }
+  if (panelPinned) return;
   // 摄像头/麦克风授权等系统弹窗期间不要收起，否则面板会在弹窗背后消失。
   if (mediaPermissionRequests > 0 || transientSystemInteractionRequests > 0) return;
   // 焦点落在自家另一个窗口（任务提醒浮窗等）上时不收起。
@@ -809,12 +762,26 @@ function stopDismissPolling() {
 function handleDismissMove(payload) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (isPanelHidden()) return;
+  if (panelPinned) return;
   const buttons = Number(payload && payload.buttons) || 0;
   if (buttons === 0) return;
   // 同上：位置取主进程实时光标，避免页面坐标与 DIP 不一致。
   const point = screen.getCursorScreenPoint();
   if (isPointInPanel(point.x, point.y)) return; // 面板内的按下是正常操作
   // 面板外按下：立刻收起。点击本身穿透到下面的应用，照常作用到目标。
+  debugLog('collapse: press-outside');
+  requestRendererCollapse();
+}
+
+function handleDismissPress(payload) {
+  if (!mainWindow || mainWindow.isDestroyed() || currentMode !== 'expanded') return;
+  if (panelPinned || mediaPermissionRequests > 0 || transientSystemInteractionRequests > 0) return;
+  const x = Number(payload && payload.x);
+  const y = Number(payload && payload.y);
+  const point = Number.isFinite(x) && Number.isFinite(y)
+    ? { x, y }
+    : screen.getCursorScreenPoint();
+  if (isPointInPanel(point.x, point.y, DISMISS_EDGE_MARGIN_PX)) return;
   debugLog('collapse: press-outside');
   requestRendererCollapse();
 }
@@ -828,7 +795,11 @@ function resetTopRevealGesture() {
 function handleHotzoneMove(payload) {
   if (!TOP_REVEAL_ENABLED || TOP_REVEAL_MODE === 'off') return;
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (currentMode === 'expanded' || !isPanelHidden()) return;
+  if (currentMode === 'expanded') {
+    handleDismissMove(payload);
+    return;
+  }
+  if (!isPanelHidden()) return;
   const buttons = Number(payload && payload.buttons) || 0;
   if (buttons !== 0) {
     resetTopRevealGesture();
@@ -1470,6 +1441,10 @@ ipcMain.on('dismiss:move', (_event, payload) => {
   handleDismissMove(payload);
 });
 
+ipcMain.on('dismiss:press', (_event, payload) => {
+  handleDismissPress(payload);
+});
+
 function createWindow() {
   const initial = getCenteredBounds(COLLAPSED_WIDTH, getCollapsedHeight(getTargetDisplay()));
 
@@ -1501,9 +1476,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // 停靠态窗口在屏幕外，不能让 Chromium 把定时器降频，
-      // 否则待办到期提醒在收起时会走慢。
-      backgroundThrottling: false,
+      // 待办提醒由主进程调度；面板停靠在屏幕外时允许 Chromium 降频，
+      // 避免首页渲染层在后台维持不必要的 CPU/GPU 活动。
+      backgroundThrottling: true,
     },
   });
 
@@ -1523,6 +1498,7 @@ function createWindow() {
 
   // 失焦时让渲染层走完整退场动画，再由渲染层请求缩小原生窗口。
   mainWindow.on('blur', () => {
+    if (panelPinned) return;
     if (mediaPermissionRequests > 0 || transientSystemInteractionRequests > 0) {
       cameraBlurDeferred = true;
       return;
@@ -1628,7 +1604,7 @@ function readAppSettings() {
   const features = { ...DEFAULT_FEATURES, ...(stored.features || {}), home: true };
   return {
     features,
-    shortcut: isValidPanelShortcut(stored.shortcut) ? stored.shortcut : 'Space',
+    shortcut: isValidPanelShortcut(stored.shortcut) ? stored.shortcut : 'Control+Alt+S',
     defaultTab: normalizeDefaultTabPreference(stored.defaultTab, features),
   };
 }
@@ -1730,12 +1706,12 @@ function isValidPanelShortcut(shortcut) {
 
 function setPanelShortcut(shortcut) {
   if (!isValidPanelShortcut(shortcut)) return false;
-  const previousShortcut = configuredShortcut || 'Space';
+  const previousShortcut = configuredShortcut || 'Control+Alt+S';
   stopHoverSpaceShortcut();
-  if (configuredShortcut && configuredShortcut !== 'Space' && globalShortcut.isRegistered(configuredShortcut)) {
-    globalShortcut.unregister(configuredShortcut);
-  }
   if (shortcut === 'Space') {
+    if (configuredShortcut && configuredShortcut !== 'Space' && globalShortcut.isRegistered(configuredShortcut)) {
+      globalShortcut.unregister(configuredShortcut);
+    }
     configuredShortcut = shortcut;
     startHoverSpaceShortcut();
     return true;
@@ -1751,11 +1727,16 @@ function setPanelShortcut(shortcut) {
     });
   } catch (error) {}
   if (registered) {
+    if (
+      previousShortcut !== 'Space'
+      && previousShortcut !== shortcut
+      && globalShortcut.isRegistered(previousShortcut)
+    ) globalShortcut.unregister(previousShortcut);
     configuredShortcut = shortcut;
     return true;
   }
   configuredShortcut = previousShortcut;
-  startHoverSpaceShortcut();
+  if (previousShortcut === 'Space') startHoverSpaceShortcut();
   return false;
 }
 
@@ -1878,6 +1859,11 @@ ipcMain.handle('window:set-mode', async (event, mode) => {
 
 ipcMain.handle('window:begin-collapse', () => {
   beginNativeCollapse();
+});
+
+ipcMain.handle('window:set-pinned', (event, pinned) => {
+  panelPinned = pinned === true;
+  return panelPinned;
 });
 
 ipcMain.handle('settings:get', () => publicAppSettings());
@@ -3702,8 +3688,7 @@ function watchDisplayChanges() {
       if (!mainWindow) return;
       if (panelParked && TOP_REVEAL_ENABLED) parkPanel();
       else repositionWindow();
-      positionHotzoneWindow();
-      positionDismissWindow();
+      setHotzoneEnabled(currentMode !== 'expanded');
       if (!mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send('window:metrics-changed', getLayoutMetrics());
       }
@@ -3726,7 +3711,6 @@ app.whenReady().then(() => {
   ensureFirstRunAutoLaunch();
   createWindow();
   createHotzoneWindow();
-  createDismissWindow();
   createTray();
   watchDisplayChanges();
   ensureClipImagesDir();
@@ -3760,7 +3744,6 @@ app.on('will-quit', () => {
   closeAllTranscriptionSessions();
   stopDismissPolling();
   if (hotzoneWindow && !hotzoneWindow.isDestroyed()) hotzoneWindow.destroy();
-  if (dismissWindow && !dismissWindow.isDestroyed()) dismissWindow.destroy();
   globalShortcut.unregisterAll();
   stopClipboardPolling();
 });

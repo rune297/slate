@@ -51,6 +51,7 @@ const {
   applyGeneratedNoteTitle,
   apiCredentialStatuses,
   prependClipboardHistory,
+  filterClipboardEntries,
   createExclusiveAsyncTask,
 } = domain;
 
@@ -129,6 +130,20 @@ test('clipboard history evicts only entries beyond its capacity', () => {
 
   assert.deepEqual(result.history.map((entry) => entry.id), ['new', 'first']);
   assert.deepEqual(result.evicted.map((entry) => entry.id), ['older-image']);
+});
+
+test('clipboard search composes text matching with type and favorite filters', () => {
+  const entries = [
+    { id: 'one', type: 'text', text: 'Slate release notes' },
+    { id: 'two', type: 'url', text: 'https://github.com/example/slate' },
+    { id: 'three', type: 'image', imagePath: 'clipboard-images/three.png' },
+    { id: 'four', type: 'text', text: 'Meeting notes' },
+  ];
+  assert.deepEqual(filterClipboardEntries(entries, 'SLATE').map((entry) => entry.id), ['one', 'two']);
+  assert.deepEqual(filterClipboardEntries(entries, 'github', 'text').map((entry) => entry.id), ['two']);
+  assert.deepEqual(filterClipboardEntries(entries, '', 'image').map((entry) => entry.id), ['three']);
+  assert.deepEqual(filterClipboardEntries(entries, 'slate', 'faved', ['two']).map((entry) => entry.id), ['two']);
+  assert.deepEqual(filterClipboardEntries(entries, 'missing').map((entry) => entry.id), []);
 });
 
 test('normalizeHttpUrl adds https and removes URL credentials', () => {
@@ -343,8 +358,15 @@ test('multiple browser windows use page titles instead of generic app numbers', 
   ]).map((item) => item.displayName), ['阿里云百炼控制台', 'SlateTodo 设计稿']);
 });
 
-test('createTodo requires a valid DDL and preserves reminder metadata', () => {
-  assert.equal(createTodo('没有截止时间', '', 't0', 100), null);
+test('createTodo accepts an inbox item, validates supplied DDL, and preserves reminder metadata', () => {
+  assert.deepEqual(createTodo('没有截止时间', '', 't0', 100), {
+    id: 't0',
+    text: '没有截止时间',
+    done: false,
+    createdAt: 100,
+    deadline: '',
+    remindedAt: 0,
+  });
   assert.equal(createTodo('日期无效', 'not-a-date', 't0', 100), null);
   assert.deepEqual(createTodo('  发布新版  ', '2026-08-22T10:30:00.000Z', 't1', 100), {
     id: 't1',

@@ -87,13 +87,29 @@
             </button>
             <span class="tab-indicator" id="tab-indicator" aria-hidden="true"></span>
           </div>
-
+          <div class="panel-tools" aria-label="面板工具">
+            <button class="topbar-action" id="global-search-open" type="button" aria-label="搜索全部内容" title="搜索全部内容（Ctrl+K）">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            </button>
+            <button class="topbar-action" id="panel-pin" type="button" aria-label="固定面板" title="固定面板" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 4 6 0-1 5 3 3v1H7v-1l3-3-1-5Z"/><path d="M12 13v7"/></svg>
+            </button>
+          </div>
         </header>
+
+        <section class="global-search" id="global-search" aria-label="搜索全部内容" hidden>
+          <div class="global-search-field">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="global-search-input" type="search" placeholder="搜索待办、笔记和链接…" aria-label="搜索待办、笔记和链接" autocomplete="off" spellcheck="false" />
+            <kbd>Esc</kbd>
+          </div>
+          <div class="global-search-results" id="global-search-results" role="listbox"></div>
+        </section>
 
         <div class="shortcut-recorder" id="shortcut-recorder" tabindex="-1" hidden>
           <span>按下新的唤出快捷键</span>
           <kbd id="shortcut-recorder-value">等待输入…</kbd>
-          <small>可直接使用空格；其他按键建议搭配 ⌘ / ⌥ / ⌃ / ⇧</small>
+          <small>建议使用 Ctrl / Alt / Shift 组合，避免与日常输入冲突</small>
           <button id="shortcut-recorder-cancel" type="button">取消</button>
         </div>
 
@@ -131,7 +147,7 @@
                   </button>
                 </div>
                 <div class="launcher-grid" id="launcher-grid"></div>
-                <p class="launcher-hint" id="launcher-hint">点右上角 + 添加常用软件</p>
+                <button class="launcher-hint" id="launcher-hint" type="button">添加第一个常用软件</button>
               </section>
 
               <!-- 当前打开的窗口 -->
@@ -309,6 +325,10 @@
                 <button class="clip-filter" data-filter="text" type="button">文字</button>
                 <button class="clip-filter" data-filter="image" type="button">图片</button>
                 <button class="clip-filter" data-filter="faved" type="button">收藏</button>
+                <label class="clip-search">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+                  <input id="clip-search" type="search" placeholder="搜索文字或链接" aria-label="搜索剪贴板历史" autocomplete="off" spellcheck="false" />
+                </label>
                 <button class="clip-clear-btn squircle" id="clip-clear-btn" type="button" aria-label="清空历史">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M4 7h16" />
@@ -391,7 +411,7 @@
                     <div><span class="tile-label">这台电脑</span><strong>本机与唤出</strong></div>
                   </div>
                   <div class="settings-device-row">
-                    <div><span>唤出快捷键</span><strong id="settings-shortcut-value">Space</strong></div>
+                    <div><span>唤出快捷键</span><strong id="settings-shortcut-value">Control+Alt+S</strong></div>
                     <button id="settings-shortcut-change" type="button">重新设置</button>
                   </div>
                   <label class="settings-device-row settings-default-tab-row">

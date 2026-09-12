@@ -11,8 +11,8 @@
 
   --text-1: #26241f;
   --text-2: #57544c;
-  --text-3: #8a867b;
-  --text-4: #b5b1a5;
+  --text-3: #706b60;
+  --text-4: #777166;
   --focus-ring: #2f6fdb;
 
   --scrollbar-thumb: rgba(28, 25, 18, 0.14);
@@ -135,25 +135,25 @@
 /* ============ 深灰夜间主题（原 Mac Bento 深色取值，外观=深灰时启用）============ */
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg-base: #050506;
-  --surface-1: rgba(24, 24, 27, 0.88);
-  --surface-2: rgba(39, 39, 43, 0.72);
-  --surface-3: rgba(58, 58, 64, 0.72);
+  --bg-base: #202830;
+  --surface-1: rgba(43, 54, 64, 0.96);
+  --surface-2: rgba(52, 64, 75, 0.94);
+  --surface-3: rgba(65, 78, 89, 0.92);
   --hairline: rgba(255, 255, 255, 0.12);
   --hairline-soft: rgba(255, 255, 255, 0.075);
   --squircle-highlight: rgba(255, 255, 255, 0.16);
 
   --text-1: #f7f7f8;
   --text-2: #b4b4bb;
-  --text-3: #7b7b84;
-  --text-4: #54545c;
+  --text-3: #a2afbc;
+  --text-4: #a2afbc;
   --focus-ring: #6EA8FF;
 
   --scrollbar-thumb: rgba(255, 255, 255, 0.08);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
-  --tooltip-bg: rgba(0, 0, 0, 0.92);
+  --tooltip-bg: rgba(38, 48, 58, 0.98);
   --item-hover: rgba(255, 255, 255, 0.04);
-  --panel-shadow: rgba(0, 0, 0, 0.64);
+  --panel-shadow: rgba(9, 17, 25, 0.42);
 
   --hover-bg: rgba(255, 255, 255, 0.05);
   --hover-bg-strong: rgba(255, 255, 255, 0.10);
@@ -172,7 +172,7 @@
   --toggle-off: rgba(255, 255, 255, 0.10);
   --toggle-on: rgba(67, 140, 255, 0.55);
   --toggle-knob: #f5f7ff;
-  --select-popup-bg: #2b2c30;
+  --select-popup-bg: #34404b;
 
   --accent-green: #30D978;
   --accent-orange: #FF9352;
@@ -185,10 +185,10 @@
   --invert-bg: #edf1f7;
   --invert-text: #111318;
   --panel-tint: radial-gradient(70% 80% at 50% -10%, rgba(74, 93, 126, 0.16), transparent 62%);
-  --panel-body: linear-gradient(155deg, rgba(18, 18, 21, 0.985), rgba(5, 5, 7, 0.995) 64%);
+  --panel-body: linear-gradient(155deg, rgba(43, 55, 66, 0.99), rgba(29, 38, 47, 0.995) 72%);
   --tile-sheen: radial-gradient(120% 90% at 10% 0%, rgba(255, 255, 255, 0.055), transparent 50%);
-  --tile-body: linear-gradient(145deg, rgba(30, 30, 34, 0.92), rgba(16, 16, 19, 0.92));
-  --card-body: linear-gradient(150deg, rgba(36, 36, 41, 0.98), rgba(19, 19, 23, 0.98));
+  --tile-body: linear-gradient(145deg, rgba(53, 66, 78, 0.97), rgba(39, 50, 61, 0.97));
+  --card-body: linear-gradient(150deg, rgba(57, 70, 82, 0.99), rgba(43, 55, 66, 0.99));
 }
 
 * {
@@ -1270,6 +1270,40 @@ body {
   color: var(--text-1);
 }
 
+.clip-search {
+  width: min(260px, 28vw);
+  min-width: 150px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--r-pill);
+  background: var(--surface-1);
+  color: var(--text-3);
+  transition: border-color var(--d-fast) var(--ease), background var(--d-fast) var(--ease);
+  -webkit-app-region: no-drag;
+}
+
+.clip-search:focus-within {
+  border-color: var(--focus-ring);
+  background: var(--surface-2);
+}
+
+.clip-search svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.clip-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: 11px var(--font);
+}
+.clip-search input::placeholder { color: var(--text-4); }
+
 .clip-clear-btn {
   width: 28px;
   height: 28px;
@@ -1282,7 +1316,7 @@ body {
   border-radius: var(--r-squircle);
   color: var(--text-3);
   cursor: pointer;
-  margin-left: auto;
+  margin-left: 0;
   transition:
     background var(--d-fast) var(--ease),
     color var(--d-fast) var(--ease),
@@ -2296,7 +2330,7 @@ body {
 .tile:hover::after { opacity: 1; }
 
 .tile-label {
-  color: rgba(246,246,248,.9);
+  color: var(--text-1);
   font-weight: 590;
   letter-spacing: -.08px;
 }
@@ -2948,6 +2982,130 @@ body {
 .shortcut-recorder kbd { justify-self: end; padding: 5px 8px; border-radius: 9px; background: var(--hover-bg-strong); color: var(--accent-text); font: 10px var(--font-mono); }
 .shortcut-recorder small { color: var(--text-4); font-size: 8px; line-height: 1.4; }
 .shortcut-recorder button { border: 0; background: transparent; color: var(--text-3); font: 9px var(--font); cursor: pointer; }
+
+/* 顶栏操作保留在屏幕顶部中央，不挤压两侧 Tab。 */
+.panel-tools {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  box-shadow: inset 0 1px 0 var(--inset-highlight);
+  transform: translateX(-50%);
+}
+.topbar-action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--d-fast) var(--ease), background var(--d-fast) var(--ease), transform var(--d-1) var(--ease-out);
+}
+.topbar-action:hover { color: var(--text-1); background: var(--hover-bg-strong); }
+.topbar-action:active { transform: scale(.92); }
+.topbar-action.active { color: var(--accent-text); background: var(--hover-bg-strong); }
+.topbar-action svg { width: 15px; height: 15px; }
+.topbar-action.active svg { transform: rotate(-18deg); }
+
+.global-search {
+  position: absolute;
+  inset: 0;
+  z-index: 110;
+  padding-top: 54px;
+  background: var(--scrim-bg);
+  backdrop-filter: blur(8px);
+}
+.global-search[hidden] { display: none; }
+.global-search-field,
+.global-search-results {
+  width: min(560px, calc(100% - 40px));
+  margin-inline: auto;
+  background: var(--select-popup-bg);
+  border: 1px solid var(--border-soft-strong);
+  box-shadow: 0 20px 60px var(--shadow-deep), inset 0 1px 0 var(--inset-highlight);
+}
+.global-search-field {
+  height: 48px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-radius: 18px 18px 12px 12px;
+}
+.global-search-field svg { width: 18px; color: var(--text-3); }
+.global-search-field input {
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-1);
+  font: 13px var(--font);
+}
+.global-search-field input::placeholder { color: var(--text-4); }
+.global-search-field kbd {
+  padding: 3px 6px;
+  border-radius: 7px;
+  background: var(--kbd-bg);
+  color: var(--text-3);
+  font: 9px var(--font-mono);
+}
+.global-search-results {
+  max-height: 360px;
+  margin-top: 6px;
+  padding: 7px;
+  overflow: auto;
+  border-radius: 12px 12px 18px 18px;
+}
+.global-search-result {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+.global-search-result:hover,
+.global-search-result:focus-visible { outline: none; background: var(--hover-bg-strong); }
+.global-search-result > span {
+  justify-self: start;
+  padding: 4px 6px;
+  border-radius: 7px;
+  background: var(--kbd-bg);
+  color: var(--accent-text);
+  font: 9px var(--font);
+}
+.global-search-result div { min-width: 0; display: grid; gap: 2px; }
+.global-search-result strong,
+.global-search-result small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.global-search-result strong { font: 600 12px var(--font); }
+.global-search-result small { color: var(--text-3); font: 10px var(--font); }
+.global-search-empty { padding: 38px 16px; color: var(--text-3); font: 11px var(--font); text-align: center; }
+.search-arrival { animation: search-arrival 1.1s var(--ease-out); }
+@keyframes search-arrival { 0%, 35% { box-shadow: inset 0 0 0 1px var(--focus-ring); background: var(--hover-bg-strong); } 100% { box-shadow: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .search-arrival { animation: none; box-shadow: inset 0 0 0 1px var(--focus-ring); }
+}
 /* 最小组件仍是“摘要态”，而不是把主体隐藏后留下空壳。 */
 .home-windows[data-widget-size='mini'] .window-list,
 .home-commands[data-widget-size='mini'] .command-list,
@@ -3653,7 +3811,8 @@ body {
   box-shadow: 0 2px 6px var(--shadow-soft)
 }
 .launcher-item:hover .launcher-remove { display: grid; }
-.launcher-hint { margin: 0; padding: 2px 0; color: var(--text-4); font-size: 9px; line-height: 1.35; text-align: center; }
+.launcher-hint { align-self: center; margin: auto 0 0; padding: 6px 9px; border: 0; border-radius: 9px; background: var(--hover-bg); color: var(--text-3); font: 9px/1.35 var(--font); text-align: center; cursor: pointer; }
+.launcher-hint:hover { background: var(--hover-bg-strong); color: var(--text-1); }
 .home-bento > .home-launcher[data-layout-variant='mini'] { gap: 2px; padding: 8px; }
 .home-bento > .home-launcher[data-layout-variant='mini'] .launcher-name,
 .home-bento > .home-launcher[data-layout-variant='mini'] .launcher-hint { display: none; }

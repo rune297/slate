@@ -79,9 +79,11 @@
         : '删除所选');
     }
     if (!commands.length) {
-      const empty = document.createElement('div');
+      const empty = document.createElement('button');
+      empty.type = 'button';
       empty.className = 'command-empty';
-      empty.textContent = '把常用命令、提示词或回复模板放在这里';
+      empty.textContent = '添加第一条常用指令';
+      empty.addEventListener('click', () => commandInput?.focus({ preventScroll: true }));
       commandList.appendChild(empty);
       return;
     }
@@ -2381,6 +2383,7 @@
     persistLauncherApps();
     renderLauncher();
   });
+  launcherHint?.addEventListener('click', () => launcherAdd?.click());
 
   renderLauncher();
 

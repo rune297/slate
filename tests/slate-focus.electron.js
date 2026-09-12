@@ -108,7 +108,7 @@ async function main() {
     );
 
     window.setSize(1240, 616);
-    const topbarBlankToggle = await window.webContents.executeJavaScript(`
+    const topbarTools = await window.webContents.executeJavaScript(`
       (async () => {
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const waitForClass = async (name) => {
@@ -123,39 +123,53 @@ async function main() {
         document.getElementById('tabs').classList.add('is-split');
         document.getElementById('slate').click();
         const opened = await waitForClass('expanded');
-        const topbar = document.querySelector('.topbar').getBoundingClientRect();
-        const x = topbar.left + topbar.width / 2;
-        const y = topbar.top + topbar.height / 2;
-        const hitTarget = document.elementFromPoint(x, y);
-        const interceptedByTabs = Boolean(hitTarget?.closest('.tabs'));
-        hitTarget?.dispatchEvent(new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          clientX: x,
-          clientY: y,
-        }));
+        document.getElementById('global-search-open').click();
+        await sleep(30);
+        const searchOpened = !document.getElementById('global-search').hidden;
+        document.getElementById('global-search').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await setMode(false);
         const collapsed = await waitForClass('collapsed');
         return {
           opened,
+          searchOpened,
+          searchClosed: document.getElementById('global-search').hidden,
           collapsed,
-          interceptedByTabs,
-          hitTarget: hitTarget?.id || hitTarget?.className || hitTarget?.tagName || '',
           appClass: document.getElementById('app').className,
           panelAriaHidden: document.querySelector('.panel').getAttribute('aria-hidden'),
         };
       })()
     `);
-    assert.equal(topbarBlankToggle.opened, true, '折叠岛点击后必须展开');
-    assert.equal(
-      topbarBlankToggle.interceptedByTabs,
-      false,
-      `顶部中央空白不得被 Tab 容器截获，当前命中 ${topbarBlankToggle.hitTarget}`
-    );
-    assert.equal(
-      topbarBlankToggle.collapsed,
-      true,
-      `展开后点击顶部中央空白必须收起；最终状态 ${topbarBlankToggle.appClass} / aria-hidden=${topbarBlankToggle.panelAriaHidden}`
-    );
+    assert.equal(topbarTools.opened, true, '折叠岛点击后必须展开');
+    assert.equal(topbarTools.searchOpened, true, '顶部中央的搜索按钮必须打开跨模块搜索');
+    assert.equal(topbarTools.searchClosed, true, '搜索层必须能用 Escape 收起');
+    assert.equal(topbarTools.collapsed, true, '顶栏工具检查后必须恢复折叠态');
+
+    const clipboardSearchAudit = await window.webContents.executeJavaScript(`
+      (async () => {
+        await addClipEntry({ type: 'text', text: 'Slate release notes' });
+        await addClipEntry({ type: 'url', text: 'https://github.com/example/slate' });
+        const input = document.getElementById('clip-search');
+        input.value = 'github';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const visibleText = [...document.querySelectorAll('#clip-list .clip-item')]
+          .map((item) => item.textContent.trim());
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
+          searchValueAfterEscape: input.value,
+          matchedCount: visibleText.length,
+          matchedGithub: visibleText.some((text) => text.includes('github.com/example/slate')),
+          restoredCount: document.querySelectorAll('#clip-list .clip-item').length,
+        };
+      })()
+    `);
+    assert.deepEqual(clipboardSearchAudit, {
+      searchValueAfterEscape: '',
+      matchedCount: 1,
+      matchedGithub: true,
+      restoredCount: 2,
+    }, '剪贴板搜索应即时过滤文字和链接，并可用 Escape 清空查询');
 
     const topbarTabAndSpaceToggle = await window.webContents.executeJavaScript(`
       (async () => {
@@ -513,12 +527,12 @@ async function main() {
     });
 
     const todoDeadlineReset = await window.webContents.executeJavaScript(`
-      (() => {
-        const input = document.getElementById('todo-quick-input');
+      (async () => {
         const trigger = document.getElementById('todo-quick-deadline');
         const popover = document.getElementById('todo-date-popover');
         const manuallySelected = trigger.dataset.deadline;
-        const submit = (text) => {
+        const submit = async (text) => {
+          const input = document.getElementById('todo-quick-input');
           input.value = text;
           input.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'Enter',
@@ -526,16 +540,17 @@ async function main() {
             bubbles: true,
             cancelable: true,
           }));
+          await new Promise((resolve) => setTimeout(resolve, 0));
         };
 
-        submit('manual-deadline-item');
+        await submit('manual-deadline-item');
         const stored = JSON.parse(localStorage.getItem('slate-todo-data'));
         const manual = [].concat(stored.P0, stored.P1, stored.P2, stored.P3)
           .find((item) => item.text === 'manual-deadline-item');
         const manualKept = manual?.deadline === manuallySelected;
         const triggerResetAfterSubmit = !trigger.dataset.deadline;
 
-        submit('明天 14:30 交周报');
+        await submit('明天 14:30 交周报');
         const after = JSON.parse(localStorage.getItem('slate-todo-data'));
         const parsed = [].concat(after.P0, after.P1, after.P2, after.P3)
           .find((item) => item.text === '交周报');
@@ -543,7 +558,7 @@ async function main() {
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(14, 30, 0, 0);
 
-        submit('inbox-no-date-item');
+        await submit('inbox-no-date-item');
         const final = JSON.parse(localStorage.getItem('slate-todo-data'));
         const inbox = [].concat(final.P0, final.P1, final.P2, final.P3)
           .find((item) => item.text === 'inbox-no-date-item');

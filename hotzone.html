@@ -29,7 +29,12 @@
     ipcRenderer.send('hotzone:leave');
   });
 
-  window.addEventListener('mousedown', () => {
+  window.addEventListener('mousedown', (e) => {
+    ipcRenderer.send('dismiss:press', {
+      x: e.screenX,
+      y: e.screenY,
+      button: e.button,
+    });
     ipcRenderer.send('hotzone:leave');
   });
 </script>

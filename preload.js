@@ -10,6 +10,7 @@ function subscribe(channel, handler) {
 contextBridge.exposeInMainWorld('slateAPI', {
   platform: process.platform,
   setMode: (mode) => ipcRenderer.invoke('window:set-mode', mode),
+  setPinned: (pinned) => ipcRenderer.invoke('window:set-pinned', pinned === true),
   beginCollapse: () => ipcRenderer.invoke('window:begin-collapse'),
   setTab: (tab) => ipcRenderer.invoke('window:set-tab', tab),
   ensureCamera: () => ipcRenderer.invoke('media:camera'),

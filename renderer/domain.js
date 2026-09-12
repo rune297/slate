@@ -52,6 +52,21 @@
     }
   }
 
+  function filterClipboardEntries(entries, query, filter = 'all', favoriteIds = []) {
+    const source = Array.isArray(entries) ? entries : [];
+    const normalizedQuery = String(query || '').trim().toLocaleLowerCase('zh-CN');
+    const favorites = new Set(Array.isArray(favoriteIds) ? favoriteIds : []);
+    return source.filter((entry) => {
+      if (!entry || typeof entry !== 'object') return false;
+      if (filter === 'text' && entry.type !== 'text' && entry.type !== 'url') return false;
+      if (filter === 'image' && entry.type !== 'image') return false;
+      if (filter === 'faved' && !favorites.has(entry.id)) return false;
+      if (!normalizedQuery) return true;
+      if (entry.type === 'image') return false;
+      return String(entry.text || '').toLocaleLowerCase('zh-CN').includes(normalizedQuery);
+    });
+  }
+
   function classifyLink(url, title) {
     const haystack = `${url || ''} ${title || ''}`;
     const matched = CATEGORY_RULES.find(([, pattern]) => pattern.test(haystack));
@@ -335,14 +350,15 @@
 
   function createTodo(text, deadline, id, createdAt) {
     const normalizedText = String(text || '').trim();
-    const deadlineMs = Date.parse(String(deadline || '').trim());
-    if (!normalizedText || !Number.isFinite(deadlineMs)) return null;
+    const deadlineText = String(deadline || '').trim();
+    const deadlineMs = deadlineText ? Date.parse(deadlineText) : NaN;
+    if (!normalizedText || (deadlineText && !Number.isFinite(deadlineMs))) return null;
     return {
       id: String(id || `todo-${Date.now().toString(36)}`),
       text: normalizedText,
       done: false,
       createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
-      deadline: new Date(deadlineMs).toISOString(),
+      deadline: deadlineText ? new Date(deadlineMs).toISOString() : '',
       remindedAt: 0,
     };
   }
@@ -1046,6 +1062,7 @@
     moveLinkToPosition,
     renameGroup,
     prependClipboardHistory,
+    filterClipboardEntries,
     createExclusiveAsyncTask,
     createCommand,
     createRecording,

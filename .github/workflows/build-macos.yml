@@ -17,10 +17,20 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Run portable checks
+        run: |
+          node --test tests/*.test.js
+          node --check main.js
+          node --check main-services.js
+          node --check platform.js
+          node --check preload.js
+          node --check build/afterPack.js
 
       - name: Build macOS dmg (arm64)
         id: build
@@ -34,14 +44,29 @@ jobs:
       # 只是初次打开需要右键「打开」）。
       - name: Retry without ad-hoc signing
         if: steps.build.outcome == 'failure'
-        run: npx electron-builder --mac dmg --arm64 --publish never
+        run: |
+          rm -rf dist.noindex
+          npx electron-builder --mac dmg --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           SLATE_SKIP_ADHOC_SIGN: '1'
+
+      - name: Verify Apple Silicon build
+        run: |
+          APP_PATH="$(find dist.noindex -type d -path '*mac-arm64/Slate.app' | head -n 1)"
+          test -n "$APP_PATH"
+          file "$APP_PATH/Contents/MacOS/Slate" | grep -q arm64
+
+      - name: Create SHA-256 checksum
+        run: |
+          cd dist.noindex
+          shasum -a 256 *.dmg > SHA256SUMS.txt
 
       - name: Upload dmg
         uses: actions/upload-artifact@v4
         with:
           name: slate-macos-arm64-dmg
-          path: dist.noindex/*.dmg
+          path: |
+            dist.noindex/*.dmg
+            dist.noindex/SHA256SUMS.txt
           if-no-files-found: error
