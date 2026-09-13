@@ -13,7 +13,7 @@
 </div>
 
 > [!NOTE]
-> Slate 支持 Windows x64，并提供适用于 M1、M2、M3、M4 等 Apple Silicon Mac 的 arm64 构建。macOS 版本仍需持续进行真机交互验证。
+> Slate 当前仅支持 Windows x64。
 
 ## 为什么做 Slate
 
@@ -44,15 +44,6 @@
 3. 启动 Slate。应用会常驻系统托盘。
 
 当前版本暂未提供自动更新。升级时直接运行新版安装程序覆盖安装即可，用户数据会保留。
-
-### macOS（M 系列）
-
-1. 在仓库的 **Actions** 页面打开 **Build macOS (Apple Silicon)**。
-2. 点击 **Run workflow**，等待构建完成。
-3. 在该次运行的 **Artifacts** 区域下载 `slate-macos-arm64-dmg`。
-4. 解压后得到 `slate-*-arm64.dmg`，打开并将 Slate 拖入“应用程序”。
-
-当前自动构建包使用 ad-hoc 签名，没有经过 Apple 公证。首次打开时若系统拦截，请在 Finder 中右键 Slate 并选择“打开”，或到“系统设置 → 隐私与安全性”中允许打开。正式公开分发时，应配置 Apple Developer ID 签名与公证。
 
 ### 从源码运行
 
@@ -87,7 +78,7 @@ npm start
 
 - [Electron 44](https://www.electronjs.org/) + 原生 JavaScript
 - HTML 与 CSS，无前端框架和前端编译步骤
-- [electron-builder](https://www.electron.build/) 打包 Windows NSIS 和 macOS DMG
+- [electron-builder](https://www.electron.build/) 打包 Windows NSIS 安装程序
 - Node.js 内置测试运行器与 Electron 端到端脚本
 
 ## 本地开发
@@ -102,11 +93,9 @@ npm start
 # 运行自动化测试
 npm test
 
-# 构建 Windows x64 安装包
-npm run build:win
-
-# 在 Apple Silicon Mac 上构建 arm64 DMG
+# 构建 Windows x64 安装包（两个命令等效）
 npm run build
+npm run build:win
 ```
 
 Windows 安装包生成在 `dist.noindex/` 目录。
@@ -116,7 +105,7 @@ Windows 安装包生成在 `dist.noindex/` 目录。
 ```text
 main.js             Electron 主进程、窗口与手势管理
 main-services.js    数据持久化、转写、链接抓取等服务
-platform.js         不同平台的窗口尺寸与位置策略
+platform.js         Windows 窗口尺寸与位置策略
 preload.js          主进程与渲染层之间的安全 IPC 桥接
 hotzone.html        顶部透明手势感应层
 renderer/           界面、主题与工作台功能
@@ -128,8 +117,6 @@ tests/              单元测试和 Electron 端到端测试
 ## 构建说明
 
 - Windows 安装包建议在 Windows 环境构建
-- Apple Silicon DMG 可由 `.github/workflows/build-macos.yml` 在 GitHub 的 macOS 构建机生成
-- 当前工作流生成 ad-hoc 签名测试包；公开分发前需配置 Developer ID 签名与 Apple 公证
 - Electron 端到端测试依赖可用的桌面和 GPU 合成；锁屏、无头或受限会话可能导致测试失败
 
 ## 路线图

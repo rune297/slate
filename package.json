@@ -17,16 +17,14 @@
     "electron",
     "productivity",
     "windows",
-    "macos",
     "todo",
     "workspace"
   ],
   "scripts": {
     "test": "node scripts/test-desktop.js",
     "start": "electron .",
-    "build": "electron-builder --mac dmg --publish never",
+    "build": "electron-builder --win nsis --x64 --publish never",
     "build:win": "electron-builder --win nsis --x64 --publish never",
-    "build:zip": "electron-builder --mac zip",
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
@@ -47,7 +45,6 @@
       "output": "dist.noindex",
       "buildResources": "build"
     },
-    "afterPack": "./build/afterPack.js",
     "files": [
       "main.js",
       "main-services.js",
@@ -64,31 +61,6 @@
       "!**/node_modules/.bin",
       "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
     ],
-    "mac": {
-      "icon": "build/slate-icon.icns",
-      "category": "public.app-category.productivity",
-      "minimumSystemVersion": "13.0",
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
-        }
-      ],
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "darkModeSupport": true,
-      "extendInfo": {
-        "LSUIElement": true,
-        "NSHighResolutionCapable": true,
-        "CFBundleDisplayName": "Slate",
-        "NSMicrophoneUsageDescription": "Slate 需要使用麦克风来录音并生成转写文本。",
-        "NSAppleEventsUsageDescription": "Slate 需要控制「系统事件」来枚举并聚焦当前窗口。"
-      }
-    },
     "win": {
       "icon": "build/slate-icon.png",
       "target": [
@@ -110,26 +82,6 @@
       "createStartMenuShortcut": true,
       "runAfterFinish": false,
       "deleteAppDataOnUninstall": false
-    },
-    "dmg": {
-      "title": "Slate ${version}",
-      "iconSize": 100,
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ],
-      "window": {
-        "width": 540,
-        "height": 380
-      }
     }
   },
   "dependencies": {

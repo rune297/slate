@@ -25,6 +25,6 @@ for (const file of ['slate-focus', 'retained-workspace', 'startup', 'dismiss-out
   run(require('electron'), [`tests/${file}.electron.js`]);
   fs.rmSync(testProfile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
-for (const file of ['main.js', 'main-services.js', 'platform.js', 'preload.js', 'renderer/domain.js', 'renderer/effects.js', 'renderer/app.js', 'renderer/workspace.js', 'renderer/icon-motion.js', 'renderer/notification.js', 'build/afterPack.js', 'scripts/codex-notify.js', 'scripts/claude-notify.js', 'scripts/smoke-app.js']) {
+for (const file of ['main.js', 'main-services.js', 'platform.js', 'preload.js', 'renderer/domain.js', 'renderer/effects.js', 'renderer/app.js', 'renderer/workspace.js', 'renderer/icon-motion.js', 'renderer/notification.js', 'scripts/codex-notify.js', 'scripts/claude-notify.js', 'scripts/smoke-app.js']) {
   run(process.execPath, ['--check', file]);
 }
