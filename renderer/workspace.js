@@ -728,6 +728,15 @@
   const settingsWorkspaceChoose = document.getElementById('settings-workspace-choose');
   const settingsAutoLaunch = document.getElementById('settings-auto-launch');
   const settingsInlineNote = document.getElementById('settings-inline-note');
+  const settingsClipCapture = document.getElementById('settings-clip-capture');
+  const settingsClipShortcutValue = document.getElementById('settings-clip-shortcut-value');
+  const settingsClipShortcutChange = document.getElementById('settings-clip-shortcut-change');
+  const settingsClipShortcutClear = document.getElementById('settings-clip-shortcut-clear');
+  const settingsClipRetention = document.getElementById('settings-clip-retention');
+  const settingsClipIgnoredApps = document.getElementById('settings-clip-ignored-apps');
+  const settingsClipPause = document.getElementById('settings-clip-pause');
+  const settingsBackupExport = document.getElementById('settings-backup-export');
+  const settingsBackupImport = document.getElementById('settings-backup-import');
 
   let recordings = loadJson(RECORDINGS_KEY, []).map(Domain.createRecording).filter(Boolean);
   let selectedRecordingId = recordings[0] && recordings[0].id;
@@ -931,6 +940,17 @@
       settingsLlmStatus.dataset.state = summary.llm.state;
     }
     if (settingsShortcutValue) settingsShortcutValue.textContent = summary.shortcut;
+    const clipboardSettings = settingsAppSettings?.clipboard || {};
+    if (settingsClipCapture) settingsClipCapture.checked = clipboardSettings.captureEnabled === true;
+    if (settingsClipShortcutValue) settingsClipShortcutValue.textContent = settingsAppSettings?.clipShortcut || '未设置';
+    if (settingsClipShortcutClear) settingsClipShortcutClear.hidden = !settingsAppSettings?.clipShortcut;
+    if (settingsClipRetention) settingsClipRetention.value = String(clipboardSettings.retentionDays || 7);
+    if (settingsClipIgnoredApps && document.activeElement !== settingsClipIgnoredApps) {
+      settingsClipIgnoredApps.value = Array.isArray(clipboardSettings.ignoredApps) ? clipboardSettings.ignoredApps.join(', ') : '';
+    }
+    if (settingsClipPause) settingsClipPause.textContent = Number(clipboardSettings.pausedUntil) > Date.now()
+      ? '立即恢复记录'
+      : '暂停记录 1 小时';
     if (settingsDefaultTab) {
       const visibleTabs = new Set(Domain.visiblePanelTabs(
         ['home', 'todo', 'notes', 'links', 'recordings', 'credentials', 'clip', 'settings'],
@@ -1697,6 +1717,69 @@
   settingsShortcutChange?.addEventListener('click', () => {
     document.dispatchEvent(new CustomEvent('slate:record-shortcut'));
   });
+  settingsClipShortcutChange?.addEventListener('click', () => {
+    document.dispatchEvent(new CustomEvent('slate:record-clip-shortcut'));
+  });
+  settingsClipShortcutClear?.addEventListener('click', async () => {
+    const result = await window.slateAPI?.setClipShortcut?.('').catch(() => ({ ok: false }));
+    if (!result?.ok) return setSettingsNote('剪贴板快捷键清除失败。', true);
+    settingsAppSettings = result.settings || settingsAppSettings;
+    renderSettingsPanel();
+    setSettingsNote('剪贴板快捷键已清除。');
+  });
+  async function saveClipboardSettings(patch, successMessage) {
+    const result = await window.slateAPI?.setClipboardPreferences?.(patch).catch(() => ({ ok: false }));
+    if (!result?.ok) {
+      renderSettingsPanel();
+      setSettingsNote('剪贴板设置保存失败。', true);
+      return false;
+    }
+    settingsAppSettings = result.settings || settingsAppSettings;
+    renderSettingsPanel();
+    setSettingsNote(successMessage);
+    return true;
+  }
+  settingsClipCapture?.addEventListener('change', () => {
+    saveClipboardSettings({ captureEnabled: settingsClipCapture.checked, pausedUntil: 0 }, settingsClipCapture.checked ? '已开始记录新的剪贴内容。' : '已停止记录，已有历史仍保留。');
+  });
+  settingsClipRetention?.addEventListener('change', () => {
+    saveClipboardSettings({ retentionDays: Number(settingsClipRetention.value) }, '剪贴板保留期限已更新。');
+  });
+  settingsClipIgnoredApps?.addEventListener('change', () => {
+    saveClipboardSettings({ ignoredApps: settingsClipIgnoredApps.value }, '忽略应用列表已更新。');
+  });
+  settingsClipPause?.addEventListener('click', () => {
+    const paused = Number(settingsAppSettings?.clipboard?.pausedUntil) > Date.now();
+    saveClipboardSettings({ pausedUntil: paused ? 0 : Date.now() + 60 * 60 * 1000 }, paused ? '剪贴板记录已恢复。' : '剪贴板记录已暂停 1 小时。');
+  });
+  settingsBackupExport?.addEventListener('click', async () => {
+    settingsBackupExport.disabled = true;
+    const result = await window.slateAPI?.exportBackup?.(collectLocalStorageSnapshot()).catch(() => ({ ok: false }));
+    settingsBackupExport.disabled = false;
+    if (result?.ok) setSettingsNote('备份已导出。');
+    else if (result?.error !== 'cancelled') setSettingsNote('备份导出失败。', true);
+  });
+  settingsBackupImport?.addEventListener('click', async () => {
+    settingsBackupImport.disabled = true;
+    const result = await window.slateAPI?.importBackup?.().catch(() => ({ ok: false }));
+    settingsBackupImport.disabled = false;
+    if (!result?.ok) {
+      if (result?.error !== 'cancelled') setSettingsNote('备份文件无效或无法读取。', true);
+      return;
+    }
+    const backupKeys = [
+      'slate-todo-data', 'slate-todo-category-names-v1', 'slate-todo-categories-v2',
+      'slate-home-note', 'slate-note-archive-v1', 'slate-note-active-archive-v1',
+      'slate-home-order-v3', 'slate-home-widget-sizes-v2', 'slate-home-hidden-modules-v1',
+      'slate-home-commands', 'slate-link-groups', 'slate-launcher-apps-v1', 'slate-appearance',
+    ];
+    backupKeys.forEach((key) => localStorage.removeItem(key));
+    Object.entries(result.storage || {}).forEach(([key, value]) => {
+      if (typeof value === 'string') localStorage.setItem(key, value);
+    });
+    await window.slateAPI?.saveWorkspaceData?.(collectLocalStorageSnapshot()).catch(() => false);
+    location.reload();
+  });
   settingsDefaultTab?.addEventListener('change', async () => {
     if (!window.slateAPI?.setDefaultTab) return;
     const previous = settingsAppSettings?.defaultTab || 'home';
@@ -2247,6 +2330,11 @@
     workspaceTab = event.detail && event.detail.tab || 'home';
     if (workspaceTab === 'home') refreshWindows();
     if (workspaceTab === 'settings') refreshSettingsPanel();
+    if (workspaceTab === 'recordings') {
+      loadTranscriptionConfig();
+      renderRecordings();
+    }
+    if (workspaceTab === 'credentials') loadCredentials();
   });
   document.addEventListener('slate:modechange', (event) => {
     clearWindowDragVisuals();
@@ -2260,6 +2348,7 @@
     const restored = !homeWindowsVisible && nextVisible;
     homeWindowsVisible = nextVisible;
     renderHomeModuleSettings();
+    if (event.detail?.visibleIds?.includes('recorder')) loadTranscriptionConfig();
     if (restored && workspaceExpanded && workspaceTab === 'home') refreshWindows(true);
   });
   document.addEventListener('slate:recording-state-changed', renderHomeModuleSettings);
@@ -2718,12 +2807,13 @@
 
   renderCommands();
   renderLinkGroups();
-  renderRecordings();
   renderWindows();
   updateRecordingUi();
-  loadTranscriptionConfig();
-  refreshSettingsPanel();
-  loadCredentials();
+  window.slateAPI?.getAppSettings?.().then((settings) => {
+    if (settings?.features?.recordings !== false || window.SlateHome?.isVisible?.('recorder')) {
+      loadTranscriptionConfig();
+    }
+  }).catch(() => {});
 
   window.SlateWorkspace = {
     refreshWindows,

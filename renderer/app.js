@@ -103,7 +103,7 @@ async function hydratePortableWorkspace() {
       } finally {
         savePending = false;
       }
-    }, 2000);
+    }, 5000);
   } catch (error) {}
 }
 // Do not interrupt parser-loaded workspace scripts with a recovery navigation.
@@ -861,11 +861,23 @@ let TABS = ALL_TABS.filter((name) => name !== 'clip');
 let tabButtons = Array.from(document.querySelectorAll('.tab:not([hidden])'));
 const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
 const tabIndicator = document.getElementById('tab-indicator');
+const tabsContainer = document.getElementById('tabs');
+const tabMoreWrap = document.getElementById('tab-more-wrap');
+const tabMoreButton = document.getElementById('tab-more');
+const tabMoreMenu = document.getElementById('tab-more-menu');
 
 let activeTab = 'home';
 let defaultOpenTab = 'home';
+let currentAppSettings = null;
+
+function closeTabMoreMenu() {
+  if (!tabMoreMenu || !tabMoreButton) return;
+  tabMoreMenu.hidden = true;
+  tabMoreButton.setAttribute('aria-expanded', 'false');
+}
 
 function applyFeatureSettings(settings) {
+  currentAppSettings = settings || currentAppSettings;
   const features = { ...(settings && settings.features || {}), home: true, settings: true };
   document.querySelectorAll('.tab[data-tab]').forEach((button) => {
     const enabled = button.dataset.tab === 'home'
@@ -877,12 +889,10 @@ function applyFeatureSettings(settings) {
   TABS = window.SlateDomain.visiblePanelTabs(ALL_TABS, features);
   defaultOpenTab = window.SlateDomain.resolveDefaultPanelTab(settings?.defaultTab, TABS);
   tabButtons = Array.from(document.querySelectorAll('.tab:not([hidden])'));
-  tabButtons.forEach((button) => button.classList.remove('tab-split-start'));
-  document.getElementById('tabs')?.classList.toggle('is-split', tabButtons.length > 4);
-  if (tabButtons.length > 4) {
-    tabButtons[Math.ceil(tabButtons.length / 2)]?.classList.add('tab-split-start');
-  }
+  const visibleMoreItems = tabMoreMenu ? [...tabMoreMenu.querySelectorAll('.tab:not([hidden])')] : [];
+  if (tabMoreWrap) tabMoreWrap.hidden = visibleMoreItems.length === 0;
   if (!TABS.includes(activeTab)) setActiveTab('home');
+  updateClipCaptureUi();
   requestAnimationFrame(positionIndicator);
 }
 
@@ -894,6 +904,9 @@ if (window.slateAPI?.getAppSettings) {
 function positionIndicator() {
   const btn = tabButtons.find((b) => b.dataset.tab === activeTab);
   if (!btn || !tabIndicator) return;
+  const direct = btn.parentElement === tabsContainer;
+  tabIndicator.style.opacity = direct ? '1' : '0';
+  tabMoreButton?.classList.toggle('active', !direct);
   tabIndicator.style.width = `${btn.offsetWidth}px`;
   tabIndicator.style.transform = `translateX(${btn.offsetLeft}px)`;
 }
@@ -999,6 +1012,7 @@ if (tabIndicator) {
 Array.from(document.querySelectorAll('.tab[data-tab]')).forEach((btn) => {
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
+    closeTabMoreMenu();
     setActiveTab(btn.dataset.tab);
   });
   btn.addEventListener('keydown', (e) => {
@@ -1018,12 +1032,25 @@ Array.from(document.querySelectorAll('.tab[data-tab]')).forEach((btn) => {
   });
 });
 
+tabMoreButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const opening = tabMoreMenu?.hidden === true;
+  if (tabMoreMenu) tabMoreMenu.hidden = !opening;
+  tabMoreButton.setAttribute('aria-expanded', String(opening));
+  if (opening) tabMoreMenu.querySelector('.tab:not([hidden])')?.focus({ preventScroll: true });
+});
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('#tab-more-wrap')) closeTabMoreMenu();
+});
+
 // 托盘里的“设置快捷键…”会把设置入口以内联浮层放到面板中。
 // 这里绑定所有 Tab（包括启动时隐藏的剪贴板），避免功能启用后按钮仍没有事件。
 const shortcutRecorder = document.getElementById('shortcut-recorder');
+const shortcutRecorderTitle = document.getElementById('shortcut-recorder-title');
 const shortcutRecorderValue = document.getElementById('shortcut-recorder-value');
 const shortcutRecorderCancel = document.getElementById('shortcut-recorder-cancel');
 let shortcutRecorderActive = false;
+let shortcutRecorderTarget = 'panel';
 
 function closeShortcutRecorder() {
   shortcutRecorderActive = false;
@@ -1064,26 +1091,38 @@ shortcutRecorder?.addEventListener('keydown', async (event) => {
     if (shortcutRecorderValue) shortcutRecorderValue.textContent = '单键仅支持空格';
     return;
   }
+  if (shortcutRecorderTarget === 'clip' && accelerator === 'Space') {
+    if (shortcutRecorderValue) shortcutRecorderValue.textContent = '剪贴板快捷键需要组合键';
+    return;
+  }
   if (shortcutRecorderValue) shortcutRecorderValue.textContent = accelerator;
-  const result = await window.slateAPI?.setPanelShortcut?.(accelerator).catch(() => ({ ok: false }));
+  const setter = shortcutRecorderTarget === 'clip'
+    ? window.slateAPI?.setClipShortcut
+    : window.slateAPI?.setPanelShortcut;
+  const result = await setter?.(accelerator).catch(() => ({ ok: false }));
   if (!result?.ok) {
     if (shortcutRecorderValue) shortcutRecorderValue.textContent = result?.error === 'occupied' ? '该快捷键已被占用' : '无法使用该快捷键';
     return;
   }
-  showStatusToast(`快捷键已设为 ${accelerator}`);
+  showStatusToast(`${shortcutRecorderTarget === 'clip' ? '剪贴板' : '唤出'}快捷键已设为 ${accelerator}`);
   setTimeout(closeShortcutRecorder, 420);
 });
 
 shortcutRecorderCancel?.addEventListener('click', closeShortcutRecorder);
-function openShortcutRecorder() {
+function openShortcutRecorder(event) {
   if (!isExpanded) setMode(true);
+  shortcutRecorderTarget = event?.detail?.target === 'clip' ? 'clip' : 'panel';
   shortcutRecorderActive = true;
   shortcutRecorder.hidden = false;
+  if (shortcutRecorderTitle) shortcutRecorderTitle.textContent = shortcutRecorderTarget === 'clip'
+    ? '按下新的剪贴板快捷键'
+    : '按下新的唤出快捷键';
   shortcutRecorderValue.textContent = '等待输入…';
   requestAnimationFrame(() => shortcutRecorder.focus({ preventScroll: true }));
 }
 window.slateAPI?.onRecordShortcut?.(openShortcutRecorder);
 document.addEventListener('slate:record-shortcut', openShortcutRecorder);
+document.addEventListener('slate:record-clip-shortcut', () => openShortcutRecorder({ detail: { target: 'clip' } }));
 
 // ============ 顶栏工具：临时固定 / 跨模块搜索 ============
 const panelPinButton = document.getElementById('panel-pin');
@@ -1117,10 +1156,12 @@ function parseSearchStorage(key, fallback) {
 
 function globalSearchIndex() {
   const rows = [];
+  const features = currentAppSettings?.features || {};
   Object.values(data || {}).flat().forEach((item) => {
     if (!item?.text) return;
     rows.push({ kind: '待办', tab: 'todo', id: item.id, label: item.text, detail: item.done ? '已完成' : item.deadline ? formatDeadline(item.deadline) : '收件箱', item });
   });
+  tabMoreButton?.classList.toggle('active', Boolean(tabMoreMenu?.querySelector(`.tab[data-tab="${name}"]`)));
   loadNoteArchive().forEach((note) => {
     const label = noteArchiveTitle(note);
     rows.push({ kind: '笔记', tab: 'notes', id: note.id, label, detail: noteArchiveExcerpt(note), text: `${label} ${note.content || ''}` });
@@ -1132,6 +1173,36 @@ function globalSearchIndex() {
       detail: group.name || link.url || '', text: `${link.title || ''} ${link.url || ''} ${group.name || ''}`,
     }));
   });
+  if (features.clip !== false) {
+    clipHistory.forEach((entry) => {
+      if (!entry?.text) return;
+      rows.push({
+        kind: '剪贴板', tab: 'clip', id: entry.id,
+        label: entry.text.replace(/\s+/g, ' ').trim().slice(0, 120),
+        detail: formatClipTime(entry.timestamp), text: entry.text,
+      });
+    });
+  }
+  const commands = parseSearchStorage('slate-home-commands', []);
+  if (Array.isArray(commands)) commands.forEach((command) => {
+    if (command?.text) rows.push({ kind: '常用指令', tab: 'home', id: command.id || '', label: command.text, detail: '首页快捷指令', text: command.text });
+  });
+  if (features.recordings !== false) {
+    const recordings = parseSearchStorage('slate-recordings', []);
+    if (Array.isArray(recordings)) recordings.forEach((recording) => {
+      if (!recording?.id) return;
+      rows.push({
+        kind: '录音', tab: 'recordings', id: recording.id,
+        label: recording.title || '未命名录音',
+        detail: (recording.transcript || '仅音频').replace(/\s+/g, ' ').slice(0, 100),
+        text: `${recording.title || ''} ${recording.transcript || ''}`,
+      });
+    });
+  }
+  const launchers = parseSearchStorage('slate-launcher-apps-v1', []);
+  if (Array.isArray(launchers)) launchers.forEach((launcher, index) => {
+    if (launcher?.name || launcher?.path) rows.push({ kind: '应用', tab: 'home', id: String(index), label: launcher.name || '未命名应用', detail: launcher.path || '', text: `${launcher.name || ''} ${launcher.path || ''}` });
+  });
   return rows;
 }
 
@@ -1142,7 +1213,7 @@ function renderGlobalSearch(query = '') {
   if (!normalized) {
     const hint = document.createElement('div');
     hint.className = 'global-search-empty';
-    hint.textContent = '输入关键词，一次查找待办、笔记和链接';
+    hint.textContent = '输入关键词，一次查找待办、笔记、链接、剪贴板和更多内容';
     globalSearchResults.append(hint);
     return;
   }
@@ -1212,14 +1283,20 @@ async function activateGlobalSearchResult(button) {
   if (resultKind === '待办') renderList();
   if (resultKind === '笔记') renderNotesLibrary();
   requestAnimationFrame(() => {
-    const target = resultKind === '待办'
-      ? document.querySelector(`.todo-item[data-id="${CSS.escape(resultId)}"] [data-action="toggle"]`)
-      : resultKind === '笔记'
-        ? document.querySelector(`[data-note-id="${CSS.escape(resultId)}"]`)
-        : document.querySelector(`[data-link-id="${CSS.escape(resultId)}"] .link-open`);
+    const selectors = {
+      '待办': `.todo-item[data-id="${CSS.escape(resultId)}"] [data-action="toggle"]`,
+      '笔记': `[data-note-id="${CSS.escape(resultId)}"]`,
+      '链接': `[data-link-id="${CSS.escape(resultId)}"] .link-open`,
+      '剪贴板': `.clip-item[data-id="${CSS.escape(resultId)}"] .clip-copy-target`,
+      '常用指令': `.command-item[data-id="${CSS.escape(resultId)}"] .command-text`,
+      '录音': `.recording-item[data-id="${CSS.escape(resultId)}"] .recording-item-main`,
+      '应用': `.launcher-item[data-launcher-index="${CSS.escape(resultId)}"]`,
+    };
+    const target = document.querySelector(selectors[resultKind] || '');
     target?.focus({ preventScroll: true });
-    target?.closest('.todo-item, .notes-list-item, .link-item')?.classList.add('search-arrival');
-    setTimeout(() => target?.closest('.todo-item, .notes-list-item, .link-item')?.classList.remove('search-arrival'), 1200);
+    const row = target?.closest('.todo-item, .notes-list-item, .link-item, .clip-item, .command-item, .recording-item, .launcher-item');
+    row?.classList.add('search-arrival');
+    setTimeout(() => row?.classList.remove('search-arrival'), 1200);
   });
 }
 
@@ -2811,7 +2888,7 @@ function loadHomeSizes() {
 function loadHiddenHomeModules() {
   try {
     const rawText = localStorage.getItem(HOME_HIDDEN_MODULES_KEY);
-    if (rawText === null) return { hiddenIds: [], needsRepair: false };
+    if (rawText === null) return { hiddenIds: ['recorder', 'commands'], needsRepair: true };
     const parsed = JSON.parse(rawText);
     const hiddenIds = window.SlateDomain.normalizeHiddenHomeModules(parsed, HOME_MODULE_REGISTRY);
     return {
@@ -3324,10 +3401,75 @@ const clipListEl = document.getElementById('clip-list');
 const clipToolbarEl = document.getElementById('clip-toolbar');
 const clipSearchInput = document.getElementById('clip-search');
 const clipClearBtn = document.getElementById('clip-clear-btn');
+const clipCaptureState = document.getElementById('clip-capture-state');
+const clipCaptureDetail = document.getElementById('clip-capture-detail');
+const clipCaptureToggle = document.getElementById('clip-capture-toggle');
+const clipPauseButton = document.getElementById('clip-pause');
 let clipClearArmed = false;
 
 // 防重入标志：renderClipList 内按需图片预加载完成后的二次渲染
 let clipRenderPending = false;
+
+function updateClipCaptureUi() {
+  const preferences = currentAppSettings?.clipboard || {};
+  const enabled = preferences.captureEnabled === true;
+  const paused = enabled && Number(preferences.pausedUntil) > Date.now();
+  if (clipCaptureState) clipCaptureState.textContent = paused
+    ? '剪贴板记录已暂停'
+    : enabled ? '正在记录新的剪贴内容' : '未记录新的剪贴内容';
+  if (clipCaptureDetail) clipCaptureDetail.textContent = paused
+    ? `将在 ${new Date(preferences.pausedUntil).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 自动恢复`
+    : enabled ? `历史保留 ${preferences.retentionDays || 7} 天，可随时停止` : '需要时再开启，已有历史仍可搜索';
+  if (clipCaptureToggle) clipCaptureToggle.textContent = enabled ? '停止记录' : '开始记录';
+  if (clipPauseButton) {
+    clipPauseButton.hidden = !enabled;
+    clipPauseButton.textContent = paused ? '立即恢复' : '暂停 1 小时';
+  }
+}
+
+async function updateClipboardPreferences(patch) {
+  const result = await window.slateAPI?.setClipboardPreferences?.(patch).catch(() => ({ ok: false }));
+  if (!result?.ok) {
+    showStatusToast('剪贴板设置保存失败');
+    return false;
+  }
+  currentAppSettings = result.settings || currentAppSettings;
+  pruneClipHistoryByRetention();
+  updateClipCaptureUi();
+  return true;
+}
+
+function pruneClipHistoryByRetention() {
+  const days = Number(currentAppSettings?.clipboard?.retentionDays) || 7;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const expired = clipHistory.filter((entry) => Number(entry.timestamp) < cutoff);
+  if (!expired.length) return 0;
+  const expiredIds = new Set(expired.map((entry) => entry.id));
+  const imagePaths = expired.filter((entry) => entry.imagePath).map((entry) => entry.imagePath);
+  clipHistory = clipHistory.filter((entry) => !expiredIds.has(entry.id));
+  clipFavorites = clipFavorites.filter((id) => !expiredIds.has(id));
+  imagePaths.forEach((imagePath) => clipImageCache.delete(imagePath));
+  saveClipHistory(clipHistory);
+  saveClipFavorites(clipFavorites);
+  if (imagePaths.length) window.slateAPI?.deleteClipImages?.(imagePaths).catch(() => {});
+  clipDataVersion += 1;
+  renderClipList();
+  return expired.length;
+}
+
+clipCaptureToggle?.addEventListener('click', async () => {
+  const next = currentAppSettings?.clipboard?.captureEnabled !== true;
+  if (await updateClipboardPreferences({ captureEnabled: next, pausedUntil: 0 })) {
+    showStatusToast(next ? '已开始记录新的剪贴内容' : '已停止记录，历史仍保留');
+  }
+});
+clipPauseButton?.addEventListener('click', async () => {
+  const paused = Number(currentAppSettings?.clipboard?.pausedUntil) > Date.now();
+  const pausedUntil = paused ? 0 : Date.now() + 60 * 60 * 1000;
+  if (await updateClipboardPreferences({ pausedUntil })) showStatusToast(paused ? '剪贴板记录已恢复' : '已暂停记录 1 小时');
+});
+pruneClipHistoryByRetention();
+updateClipCaptureUi();
 
 async function preloadClipImage(imagePath) {
   if (!imagePath) return;

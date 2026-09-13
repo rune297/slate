@@ -1,6 +1,6 @@
 // electron-builder afterPack hook
-// 因为 electron-builder + identity:null 跳过签名，apsar:false 又关闭了 integrity 校验，
-// 这里手动给整个 .app bundle 做 ad-hoc 签名，从内到外，保证 macOS 14+ 启动校验通过。
+// 因为 electron-builder + identity:null 跳过签名，这里手动给整个 .app bundle做
+// ad-hoc 签名，从内到外保证 macOS 14+ 启动校验通过。
 const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');

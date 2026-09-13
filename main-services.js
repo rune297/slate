@@ -323,18 +323,73 @@ function parseSmartLinkMetadata(value) {
   };
 }
 
-// 剪贴板默认关闭（DEFAULT_FEATURES.clip = false），关着就不该轮询系统剪贴板。
-// 原实现收了 features 却完全不用，恒定返回 recordHistory: true，于是无论用户有没有
-// 在菜单栏打开这个功能，主进程都在每 500ms 读一次粘贴板——剪贴板里躺着大图时
-// （实测一张截图 1.9MB PNG + 6.9MB Photoshop 数据）主进程空转就能吃掉三成 CPU，
-// 面板展开和拖拽都会明显卡顿。
-// 全局快捷键始终不注册：原 Cmd+Shift+V 已撤销，app:open-clip 仅由菜单栏驱动。
-function clipboardServicePolicy(features) {
-  const source = features && typeof features === 'object' && !Array.isArray(features) ? features : {};
+// 显示剪贴板页面与后台采集是两件事：只有用户明确开启采集且未暂停时才轮询。
+// 剪贴板专用快捷键由主进程单独注册，不由采集服务占用固定组合键。
+function normalizeClipboardPreferences(value, legacyCaptureEnabled = false) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const retentionDays = [1, 7, 30, 90].includes(Number(source.retentionDays))
+    ? Number(source.retentionDays)
+    : 7;
+  const ignoredSource = Array.isArray(source.ignoredApps)
+    ? source.ignoredApps
+    : typeof source.ignoredApps === 'string'
+      ? source.ignoredApps.split(/[\n,]/)
+      : [];
+  const ignoredApps = [...new Set(ignoredSource
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 30))];
   return {
-    recordHistory: source.clip === true,
+    captureEnabled: typeof source.captureEnabled === 'boolean'
+      ? source.captureEnabled
+      : legacyCaptureEnabled === true,
+    pausedUntil: Math.max(0, Number(source.pausedUntil) || 0),
+    retentionDays,
+    ignoredApps,
+  };
+}
+
+function clipboardServicePolicy(settings, now = Date.now()) {
+  const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+  const hasSettingsShape = source.features && typeof source.features === 'object';
+  const features = hasSettingsShape ? source.features : source;
+  const preferences = normalizeClipboardPreferences(
+    hasSettingsShape ? source.clipboard : null,
+    !hasSettingsShape && source.clip === true
+  );
+  return {
+    recordHistory: features.clip !== false
+      && preferences.captureEnabled
+      && preferences.pausedUntil <= now,
     registerGlobalShortcut: false,
   };
+}
+
+const BACKUP_STORAGE_KEYS = new Set([
+  'slate-todo-data',
+  'slate-todo-category-names-v1',
+  'slate-todo-categories-v2',
+  'slate-home-note',
+  'slate-note-archive-v1',
+  'slate-note-active-archive-v1',
+  'slate-home-order-v3',
+  'slate-home-widget-sizes-v2',
+  'slate-home-hidden-modules-v1',
+  'slate-home-commands',
+  'slate-link-groups',
+  'slate-launcher-apps-v1',
+  'slate-appearance',
+]);
+
+function sanitizeBackupStorage(storage) {
+  const source = storage && typeof storage === 'object' && !Array.isArray(storage) ? storage : {};
+  const safe = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!BACKUP_STORAGE_KEYS.has(key) || typeof value !== 'string') continue;
+    if (Buffer.byteLength(value, 'utf8') > 2 * 1024 * 1024) continue;
+    safe[key] = value;
+  }
+  return safe;
 }
 
 function createClipboardImageFingerprint(width, height, pngBuffer) {
@@ -544,6 +599,8 @@ module.exports = {
   parseSmartMaterialMetadata,
   selectTranscriptionSettings,
   clipboardServicePolicy,
+  normalizeClipboardPreferences,
+  sanitizeBackupStorage,
   createClipboardImageFingerprint,
   prepareClipboardImagePayload,
   installLocalWebContentsGuards,

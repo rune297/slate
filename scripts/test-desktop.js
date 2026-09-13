@@ -5,6 +5,7 @@ const os = require('node:os');
 const root = path.join(__dirname, '..');
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
+env.SLATE_NOTIFICATION_PORT = '43831';
 function run(executable, args) {
   console.log(`Checking ${args.join(' ')}`);
   const result = spawnSync(executable, args, { cwd: root, env, stdio: 'inherit', timeout: 180000 });

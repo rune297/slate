@@ -14,6 +14,8 @@ const {
   parseSmartLinkMetadata,
   parseSmartMaterialMetadata,
   clipboardServicePolicy,
+  normalizeClipboardPreferences,
+  sanitizeBackupStorage,
   createClipboardImageFingerprint,
   installLocalWebContentsGuards,
   runOwnedOpenDialog,
@@ -340,25 +342,53 @@ test('smart link metadata accepts fenced JSON but restricts category and title l
   assert.equal(parseSmartLinkMetadata('not-json'), null);
 });
 
-test('clipboard polling follows the feature switch and never reserves a global shortcut', () => {
-  // 剪贴板默认关闭，关着就不能轮询系统剪贴板：原实现恒返回 recordHistory: true，
-  // 于是主进程无论开关状态都在每 500ms 读一次粘贴板，粘贴板里有大图时空转吃掉三成 CPU。
-  assert.deepEqual(clipboardServicePolicy({ clip: true }), {
+test('clipboard polling requires a visible feature, explicit capture, and no active pause', () => {
+  assert.deepEqual(clipboardServicePolicy({ features: { clip: true }, clipboard: { captureEnabled: true } }), {
     recordHistory: true,
     registerGlobalShortcut: false,
   });
-  assert.deepEqual(clipboardServicePolicy({ clip: false }), {
+  assert.deepEqual(clipboardServicePolicy({ features: { clip: false }, clipboard: { captureEnabled: true } }), {
     recordHistory: false,
     registerGlobalShortcut: false,
   });
-  // 缺字段或传入非对象时一律按「关闭」处理，不能默默恢复轮询。
+  assert.equal(clipboardServicePolicy({ features: { clip: true }, clipboard: { captureEnabled: false } }).recordHistory, false);
+  assert.equal(clipboardServicePolicy({ features: { clip: true }, clipboard: { captureEnabled: true, pausedUntil: 2000 } }, 1000).recordHistory, false);
+  assert.equal(clipboardServicePolicy({ features: { clip: true }, clipboard: { captureEnabled: true, pausedUntil: 2000 } }, 3000).recordHistory, true);
   assert.equal(clipboardServicePolicy({}).recordHistory, false);
   assert.equal(clipboardServicePolicy(undefined).recordHistory, false);
   assert.equal(clipboardServicePolicy(true).recordHistory, false);
-  // 全局快捷键在任何情况下都不注册（原 Cmd+Shift+V 已撤销）。
-  for (const input of [{ clip: true }, { clip: false }, {}, undefined]) {
+  for (const input of [{ features: { clip: true } }, { features: { clip: false } }, {}, undefined]) {
     assert.equal(clipboardServicePolicy(input).registerGlobalShortcut, false);
   }
+});
+
+test('clipboard privacy settings normalize retention and ignored applications', () => {
+  assert.deepEqual(normalizeClipboardPreferences({
+    captureEnabled: true,
+    pausedUntil: 123,
+    retentionDays: 30,
+    ignoredApps: '1Password, KeePass\n1Password',
+  }), {
+    captureEnabled: true,
+    pausedUntil: 123,
+    retentionDays: 30,
+    ignoredApps: ['1Password', 'KeePass'],
+  });
+  assert.equal(normalizeClipboardPreferences(null, true).captureEnabled, true);
+  assert.equal(normalizeClipboardPreferences({ retentionDays: 999 }).retentionDays, 7);
+});
+
+test('backup export keeps durable content and excludes sensitive or bulky histories', () => {
+  assert.deepEqual(sanitizeBackupStorage({
+    'slate-todo-data': '{"P0":[]}',
+    'slate-home-commands': '[]',
+    'slate-clip-history': '[{"text":"secret"}]',
+    'slate-recordings': '[{"audioPath":"private.wav"}]',
+    'slate-active-tab': 'clip',
+  }), {
+    'slate-todo-data': '{"P0":[]}',
+    'slate-home-commands': '[]',
+  });
 });
 
 test('enabling clipboard history baselines existing text and image without recording either', () => {

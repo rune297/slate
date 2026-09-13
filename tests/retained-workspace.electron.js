@@ -18,7 +18,10 @@ async function main() {
       document.getElementById('home-note').dispatchEvent(new Event('input', {bubbles:true}));
     `);
     await window.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-    const state = await window.webContents.executeJavaScript(`({home:!!window.SlateHome,workspace:!!window.SlateWorkspace,note:document.getElementById('home-note').value,recordings:document.querySelectorAll('.recording-item').length})`);
+    const state = await window.webContents.executeJavaScript(`new Promise((resolve) => {
+      document.getElementById('tab-button-recordings').click();
+      setTimeout(() => resolve({home:!!window.SlateHome,workspace:!!window.SlateWorkspace,note:document.getElementById('home-note').value,recordings:document.querySelectorAll('.recording-item').length}), 60);
+    })`);
     assert.deepEqual(errors, [], 'Retained profile must initialize without renderer errors');
     assert.deepEqual(state, {home:true,workspace:true,note:'Retained note',recordings:1});
     console.log('Retained workspace renderer checks passed');

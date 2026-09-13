@@ -224,7 +224,8 @@ async function main() {
           resolve({
             contentClipPath: getComputedStyle(panel).clipPath,
             shellOwnsExpandedOutline: shellClipPath !== 'none' && !shellClipPath.includes('calc'),
-            rightmostTab: document.querySelector('.tab[data-tab]:last-of-type')?.dataset.tab,
+            rightmostDirectTab: document.querySelector('#tabs .tab[data-tab]:last-of-type')?.dataset.tab,
+            settingsInMoreMenu: Boolean(document.querySelector('#tab-more-menu .tab[data-tab="settings"]')),
             activePanel: document.getElementById('tab-settings')?.classList.contains('active'),
             display: getComputedStyle(page).display,
             columns: getComputedStyle(page).gridTemplateColumns.split(' ').filter(Boolean).length,
@@ -239,6 +240,8 @@ async function main() {
             },
             workspace: Boolean(document.getElementById('settings-workspace-choose')),
             autoLaunch: Boolean(document.getElementById('settings-auto-launch')),
+            clipboardPrivacy: Boolean(document.getElementById('settings-clip-capture')),
+            backup: Boolean(document.getElementById('settings-backup-export')),
           });
         }, 80);
       })
@@ -247,7 +250,8 @@ async function main() {
     assert.deepEqual(settingsSurface, {
       contentClipPath: 'none',
       shellOwnsExpandedOutline: true,
-      rightmostTab: 'settings',
+      rightmostDirectTab: 'links',
+      settingsInMoreMenu: true,
       activePanel: true,
       display: 'grid',
       columns: 2,
@@ -258,6 +262,8 @@ async function main() {
       defaultTab: { exists: true, value: 'home', options: 8 },
       workspace: true,
       autoLaunch: true,
+      clipboardPrivacy: true,
+      backup: true,
     });
 
     const defaultTabOpening = await window.webContents.executeJavaScript(`

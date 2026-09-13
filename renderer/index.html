@@ -49,7 +49,7 @@
                 <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
                 <rect x="9" y="3" width="6" height="4" rx="1" />
               </svg>
-              <span class="tab-label">剪贴</span>
+              <span class="tab-label">剪贴板</span>
             </button>
             <button class="tab" id="tab-button-notes" type="button" data-tab="notes" role="tab" aria-controls="tab-notes" aria-selected="false" tabindex="-1">
               <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -65,18 +65,25 @@
               </svg>
               <span class="tab-label">链接</span>
             </button>
-            <button class="tab" id="tab-button-recordings" type="button" data-tab="recordings" role="tab" aria-controls="tab-recordings" aria-selected="false" tabindex="-1">
+            <span class="tab-indicator" id="tab-indicator" aria-hidden="true"></span>
+          </div>
+          <div class="tab-more-wrap" id="tab-more-wrap">
+            <button class="tab-more" id="tab-more" type="button" aria-haspopup="menu" aria-expanded="false">
+              <span>更多</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+            </button>
+            <div class="tab-more-menu" id="tab-more-menu" role="menu" hidden>
+            <button class="tab tab-menu-item" id="tab-button-recordings" type="button" data-tab="recordings" role="tab" aria-controls="tab-recordings" aria-selected="false" tabindex="-1">
               <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="8" y="3" width="8" height="13" rx="4" />
                 <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7" />
               </svg>
-              <span class="tab-label">录制</span>
+              <span class="tab-label">录音</span>
             </button>
             <button class="tab" id="tab-button-credentials" type="button" data-tab="credentials" role="tab" aria-controls="tab-credentials" aria-selected="false" tabindex="-1">
               <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="8" cy="15" r="4" /><path d="m11 12 7-7 2 2-2 2 1.5 1.5-2.5 2.5-1.5-1.5-2 2" />
               </svg>
-              <span class="tab-label">密钥</span>
+              <span class="tab-label">本机密钥</span>
             </button>
             <button class="tab" id="tab-button-settings" type="button" data-tab="settings" role="tab" aria-controls="tab-settings" aria-selected="false" tabindex="-1">
               <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -85,7 +92,7 @@
               </svg>
               <span class="tab-label">设置</span>
             </button>
-            <span class="tab-indicator" id="tab-indicator" aria-hidden="true"></span>
+            </div>
           </div>
           <div class="panel-tools" aria-label="面板工具">
             <button class="topbar-action" id="global-search-open" type="button" aria-label="搜索全部内容" title="搜索全部内容（Ctrl+K）">
@@ -100,14 +107,14 @@
         <section class="global-search" id="global-search" aria-label="搜索全部内容" hidden>
           <div class="global-search-field">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-            <input id="global-search-input" type="search" placeholder="搜索待办、笔记和链接…" aria-label="搜索待办、笔记和链接" autocomplete="off" spellcheck="false" />
+            <input id="global-search-input" type="search" placeholder="搜索待办、笔记、剪贴板和更多内容…" aria-label="搜索全部 Slate 内容" autocomplete="off" spellcheck="false" />
             <kbd>Esc</kbd>
           </div>
           <div class="global-search-results" id="global-search-results" role="listbox"></div>
         </section>
 
         <div class="shortcut-recorder" id="shortcut-recorder" tabindex="-1" hidden>
-          <span>按下新的唤出快捷键</span>
+          <span id="shortcut-recorder-title">按下新的唤出快捷键</span>
           <kbd id="shortcut-recorder-value">等待输入…</kbd>
           <small>建议使用 Ctrl / Alt / Shift 组合，避免与日常输入冲突</small>
           <button id="shortcut-recorder-cancel" type="button">取消</button>
@@ -147,7 +154,10 @@
                   </button>
                 </div>
                 <div class="launcher-grid" id="launcher-grid"></div>
-                <button class="launcher-hint" id="launcher-hint" type="button">添加第一个常用软件</button>
+                <button class="launcher-hint" id="launcher-hint" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>
+                  <strong>添加常用软件</strong><small>以后从这里一键启动或切换</small>
+                </button>
               </section>
 
               <!-- 当前打开的窗口 -->
@@ -320,6 +330,10 @@
 
           <section id="tab-clip" class="tab-panel" role="tabpanel" aria-labelledby="tab-button-clip" aria-hidden="true" inert>
             <div class="clip-panel">
+              <div class="clip-capture-bar" id="clip-capture-bar">
+                <div><span id="clip-capture-state">未记录新的剪贴内容</span><small id="clip-capture-detail">需要时再开启，已有历史仍可搜索</small></div>
+                <span class="clip-capture-actions"><button id="clip-pause" type="button" hidden>暂停 1 小时</button><button id="clip-capture-toggle" type="button">开始记录</button></span>
+              </div>
               <div class="clip-toolbar" id="clip-toolbar">
                 <button class="clip-filter active" data-filter="all" type="button">全部</button>
                 <button class="clip-filter" data-filter="text" type="button">文字</button>
@@ -384,9 +398,9 @@
                     <label><span><b>待办</b><small>四象限任务</small></span><input type="checkbox" data-settings-feature="todo" aria-label="显示待办" /><i aria-hidden="true"></i></label>
                     <label><span><b>笔记</b><small>随笔与资料库</small></span><input type="checkbox" data-settings-feature="notes" aria-label="显示笔记" /><i aria-hidden="true"></i></label>
                     <label><span><b>链接</b><small>收藏与分组</small></span><input type="checkbox" data-settings-feature="links" aria-label="显示链接" /><i aria-hidden="true"></i></label>
-                    <label><span><b>录制</b><small>录音与转写</small></span><input type="checkbox" data-settings-feature="recordings" aria-label="显示录制" /><i aria-hidden="true"></i></label>
-                    <label><span><b>密钥</b><small>本机安全存储</small></span><input type="checkbox" data-settings-feature="credentials" aria-label="显示密钥" /><i aria-hidden="true"></i></label>
-                    <label><span><b>剪贴板</b><small>默认关闭</small></span><input type="checkbox" data-settings-feature="clip" aria-label="显示剪贴板" /><i aria-hidden="true"></i></label>
+                    <label><span><b>录音</b><small>录音与转写</small></span><input type="checkbox" data-settings-feature="recordings" aria-label="显示录音" /><i aria-hidden="true"></i></label>
+                    <label><span><b>本机密钥</b><small>系统安全存储</small></span><input type="checkbox" data-settings-feature="credentials" aria-label="显示本机密钥" /><i aria-hidden="true"></i></label>
+                    <label><span><b>剪贴板</b><small>显示入口，采集单独控制</small></span><input type="checkbox" data-settings-feature="clip" aria-label="显示剪贴板" /><i aria-hidden="true"></i></label>
                   </div>
                 </section>
 
@@ -421,8 +435,8 @@
                       <option value="todo">待办</option>
                       <option value="notes">笔记</option>
                       <option value="links">链接</option>
-                      <option value="recordings">录制</option>
-                      <option value="credentials">密钥</option>
+                      <option value="recordings">录音</option>
+                      <option value="credentials">本机密钥</option>
                       <option value="clip">剪贴板</option>
                       <option value="settings">设置</option>
                     </select>
@@ -448,6 +462,29 @@
                     <i aria-hidden="true"></i>
                   </label>
                   <p class="settings-inline-note" id="settings-inline-note" role="status" aria-live="polite"></p>
+                </section>
+                <section class="tile settings-card settings-clipboard-card">
+                  <div class="settings-card-heading">
+                    <div><span class="tile-label">隐私</span><strong>剪贴板记录</strong></div>
+                    <label class="settings-compact-toggle"><span>采集</span><input id="settings-clip-capture" type="checkbox" aria-label="记录新的剪贴板内容" /><i aria-hidden="true"></i></label>
+                  </div>
+                  <div class="settings-device-row">
+                    <div><span>剪贴板快捷键</span><strong id="settings-clip-shortcut-value">未设置</strong></div>
+                    <span class="settings-device-actions"><button id="settings-clip-shortcut-change" type="button">设置</button><button id="settings-clip-shortcut-clear" type="button">清除</button></span>
+                  </div>
+                  <label class="settings-device-row settings-default-tab-row">
+                    <div><span>历史保留</span><strong>到期后在本机自动删除</strong></div>
+                    <select id="settings-clip-retention" aria-label="剪贴板历史保留期限">
+                      <option value="1">1 天</option><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option>
+                    </select>
+                  </label>
+                  <label class="settings-ignored-apps"><span>忽略这些应用</span><input id="settings-clip-ignored-apps" placeholder="例如 1Password, KeePass" autocomplete="off" /><small>输入应用或进程名称，用逗号分隔</small></label>
+                  <button class="settings-wide-button" id="settings-clip-pause" type="button">暂停记录 1 小时</button>
+                </section>
+                <section class="tile settings-card settings-backup-card">
+                  <div class="settings-card-heading"><div><span class="tile-label">数据</span><strong>备份与恢复</strong></div></div>
+                  <p>备份待办、笔记、链接、常用指令、启动器和界面设置。剪贴板历史、录音、密码与 API 密钥不会导出。</p>
+                  <div class="settings-backup-actions"><button id="settings-backup-export" type="button">导出备份</button><button id="settings-backup-import" type="button">导入备份</button></div>
                 </section>
               </div>
             </div>

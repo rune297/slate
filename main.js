@@ -38,6 +38,8 @@ const {
   extractFaviconHref,
   parseSmartMaterialMetadata,
   clipboardServicePolicy,
+  normalizeClipboardPreferences,
+  sanitizeBackupStorage,
   createClipboardImageFingerprint,
   prepareClipboardImagePayload,
   installLocalWebContentsGuards,
@@ -271,7 +273,12 @@ const TASK_NOTIFICATION_DEDUPE_MS = 2000;
 const TASK_NOTIFICATION_MAX_QUEUE = 5;
 const TASK_NOTIFICATION_BODY_LIMIT = 64 * 1024;
 const TASK_NOTIFICATION_HOST = '127.0.0.1';
-const TASK_NOTIFICATION_PORT = 43821;
+const configuredNotificationPort = Number(process.env.SLATE_NOTIFICATION_PORT);
+const TASK_NOTIFICATION_PORT = Number.isInteger(configuredNotificationPort)
+  && configuredNotificationPort >= 1024
+  && configuredNotificationPort <= 65535
+  ? configuredNotificationPort
+  : 43821;
 // /notify/<source> 的来源白名单：只放行已知 Agent，其余一律 404。
 const TASK_NOTIFICATION_SOURCES = new Set(['codex', 'gpt', 'claude']);
 const TODO_REMINDER_LEAD_MS = 60 * 60 * 1000;
@@ -334,6 +341,8 @@ let clipPollingGeneration = 0;
 let spaceShortcutTimer = null;
 let spaceShortcutRegistered = false;
 let configuredShortcut = '';
+let configuredClipShortcut = '';
+let clipboardResumeTimer = null;
 let previousPasteTarget = null;
 let windowScanCache = new Map();
 const windowIconCache = new Map();
@@ -876,31 +885,31 @@ function revealPanelFromTopEdge() {
 function syncTopRevealPolling() {
   if (!TOP_REVEAL_ENABLED || TOP_REVEAL_MODE === 'off') return;
   if (topRevealTimer) return;
-  topRevealTimer = setInterval(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (currentMode === 'expanded') return;
-    const inZone = isCursorInTopRevealZone();
-    if (!inZone) {
-      // 光标离开热区：重新武装，并清掉停留计时。
-      // 注意不要在这里清 hotzoneGesture —— 手势的「向下推」阶段正是发生在热区之外。
-      topRevealArmed = true;
-      topRevealDwellSince = 0;
-      return;
+  const poll = () => {
+    topRevealTimer = null;
+    let nextDelay = 320;
+    if (mainWindow && !mainWindow.isDestroyed() && currentMode !== 'expanded') {
+      const inZone = isCursorInTopRevealZone();
+      nextDelay = inZone ? TOP_REVEAL_POLL_MS : 320;
+      if (!inZone) {
+        // 光标远离顶部时降低轮询频率；感应层仍会即时处理真正的下拉手势。
+        topRevealArmed = true;
+        topRevealDwellSince = 0;
+      } else if (topRevealArmed && isPanelHidden()) {
+        if (TOP_REVEAL_MODE === 'hover') {
+          revealPanelFromTopEdge();
+        } else if (!topRevealDwellSince) {
+          topRevealDwellSince = Date.now();
+        } else if (Date.now() - topRevealDwellSince >= TOP_REVEAL_DWELL_MS) {
+          revealPanelFromTopEdge();
+        }
+      }
     }
-    if (!topRevealArmed) return;
-    if (!isPanelHidden()) return;
-    if (TOP_REVEAL_MODE === 'hover') {
-      revealPanelFromTopEdge();
-      return;
-    }
-    // gesture 模式：手势判定交给感应层；这里只做停留兜底 ——
-    // 万一穿透感应层在某些机器上收不到转发消息，停在顶部 DWELL 毫秒仍可唤出。
-    if (!topRevealDwellSince) {
-      topRevealDwellSince = Date.now();
-    } else if (Date.now() - topRevealDwellSince >= TOP_REVEAL_DWELL_MS) {
-      revealPanelFromTopEdge();
-    }
-  }, TOP_REVEAL_POLL_MS);
+    topRevealTimer = setTimeout(poll, nextDelay);
+    topRevealTimer.unref?.();
+  };
+  topRevealTimer = setTimeout(poll, TOP_REVEAL_POLL_MS);
+  topRevealTimer.unref?.();
 }
 
 // ============ Codex / Claude / GPT 任务完成提醒 ============
@@ -1568,9 +1577,9 @@ const DEFAULT_FEATURES = {
   todo: true,
   notes: true,
   links: true,
-  recordings: true,
-  credentials: true,
-  clip: false,
+  recordings: false,
+  credentials: false,
+  clip: true,
 };
 
 function getJsonSettingsPath(name) {
@@ -1602,9 +1611,12 @@ function writeJsonFile(filePath, value) {
 function readAppSettings() {
   const stored = readJsonFile(getJsonSettingsPath(APP_SETTINGS_FILE));
   const features = { ...DEFAULT_FEATURES, ...(stored.features || {}), home: true };
+  const legacyClipboardCapture = !stored.clipboard && stored.features?.clip === true;
   return {
     features,
     shortcut: isValidPanelShortcut(stored.shortcut) ? stored.shortcut : 'Control+Alt+S',
+    clipShortcut: isValidClipboardShortcut(stored.clipShortcut) ? stored.clipShortcut : '',
+    clipboard: normalizeClipboardPreferences(stored.clipboard, legacyClipboardCapture),
     defaultTab: normalizeDefaultTabPreference(stored.defaultTab, features),
   };
 }
@@ -1644,6 +1656,20 @@ function showOwnedOpenDialog(options) {
       }
     }
   );
+}
+
+async function showOwnedSaveDialog(options) {
+  const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (owner) {
+    if (!owner.isVisible()) owner.show();
+    owner.focus();
+  }
+  transientSystemInteractionRequests += 1;
+  try {
+    return owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
+  } finally {
+    transientSystemInteractionRequests = Math.max(0, transientSystemInteractionRequests - 1);
+  }
 }
 
 function copyWorkspaceAssets(sourceRoot, targetRoot) {
@@ -1686,10 +1712,20 @@ async function chooseWorkspaceFolder() {
   return true;
 }
 
-function applyFeatureServices(features) {
-  const policy = clipboardServicePolicy(features);
+function applyFeatureServices(settings) {
+  const policy = clipboardServicePolicy(settings);
+  if (clipboardResumeTimer) clearTimeout(clipboardResumeTimer);
+  clipboardResumeTimer = null;
   if (policy.recordHistory) startClipboardPolling();
   else stopClipboardPolling();
+  const pausedUntil = Number(settings?.clipboard?.pausedUntil) || 0;
+  if (settings?.clipboard?.captureEnabled && pausedUntil > Date.now()) {
+    clipboardResumeTimer = setTimeout(() => {
+      clipboardResumeTimer = null;
+      applyAppSettings();
+    }, Math.min(0x7fffffff, pausedUntil - Date.now() + 50));
+    clipboardResumeTimer.unref?.();
+  }
 }
 
 function isValidPanelShortcut(shortcut) {
@@ -1706,6 +1742,11 @@ function isValidPanelShortcut(shortcut) {
 
 function setPanelShortcut(shortcut) {
   if (!isValidPanelShortcut(shortcut)) return false;
+  if (shortcut === configuredClipShortcut) return false;
+  if (shortcut === configuredShortcut) {
+    if (shortcut === 'Space') return true;
+    if (globalShortcut.isRegistered(shortcut)) return true;
+  }
   const previousShortcut = configuredShortcut || 'Control+Alt+S';
   stopHoverSpaceShortcut();
   if (shortcut === 'Space') {
@@ -1740,13 +1781,41 @@ function setPanelShortcut(shortcut) {
   return false;
 }
 
+function setClipboardShortcut(shortcut) {
+  if (!isValidClipboardShortcut(shortcut) || (shortcut && shortcut === configuredShortcut)) return false;
+  const previous = configuredClipShortcut;
+  if (!shortcut) {
+    if (previous && globalShortcut.isRegistered(previous)) globalShortcut.unregister(previous);
+    configuredClipShortcut = '';
+    return true;
+  }
+  if (shortcut === previous && globalShortcut.isRegistered(shortcut)) return true;
+  let registered = false;
+  try {
+    registered = globalShortcut.register(shortcut, () => openRendererPanel('app:open-clip'));
+  } catch (error) {}
+  if (!registered) return false;
+  if (previous && previous !== shortcut && globalShortcut.isRegistered(previous)) globalShortcut.unregister(previous);
+  configuredClipShortcut = shortcut;
+  return true;
+}
+
+function isValidClipboardShortcut(shortcut) {
+  return shortcut === '' || (shortcut !== 'Space' && isValidPanelShortcut(shortcut));
+}
+
 function applyAppSettings() {
   const settings = readAppSettings();
-  applyFeatureServices(settings.features);
+  applyFeatureServices(settings);
   if (!setPanelShortcut(settings.shortcut)) {
     settings.shortcut = 'Space';
     saveAppSettings(settings);
     setPanelShortcut('Space');
+  }
+  if (!setClipboardShortcut(settings.clipShortcut)) {
+    settings.clipShortcut = '';
+    saveAppSettings(settings);
+    setClipboardShortcut('');
   }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
 }
@@ -1894,6 +1963,7 @@ ipcMain.handle('settings:set-auto-launch', (event, enabled) => {
 });
 ipcMain.handle('settings:set-shortcut', (event, accelerator) => {
   if (!isValidPanelShortcut(accelerator)) return { ok: false, error: 'invalid' };
+  if (accelerator === configuredClipShortcut) return { ok: false, error: 'occupied' };
   if (!setPanelShortcut(accelerator)) return { ok: false, error: 'occupied' };
   const next = readAppSettings();
   next.shortcut = accelerator;
@@ -1901,6 +1971,34 @@ ipcMain.handle('settings:set-shortcut', (event, accelerator) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
   refreshTrayMenu();
   return { ok: true, shortcut: accelerator };
+});
+ipcMain.handle('settings:set-clip-shortcut', (event, accelerator) => {
+  const value = typeof accelerator === 'string' ? accelerator : '';
+  if (!isValidClipboardShortcut(value)) return { ok: false, error: 'invalid' };
+  if (value && value === configuredShortcut) return { ok: false, error: 'occupied' };
+  if (!setClipboardShortcut(value)) return { ok: false, error: 'occupied' };
+  const next = readAppSettings();
+  next.clipShortcut = value;
+  if (!saveAppSettings(next)) return { ok: false, error: 'save_failed' };
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
+  refreshTrayMenu();
+  return { ok: true, shortcut: value, settings: publicAppSettings() };
+});
+ipcMain.handle('settings:set-clipboard', (event, patch) => {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { ok: false, error: 'invalid' };
+  const current = readAppSettings();
+  const allowed = {};
+  if (typeof patch.captureEnabled === 'boolean') allowed.captureEnabled = patch.captureEnabled;
+  if (Number.isFinite(Number(patch.pausedUntil))) allowed.pausedUntil = Math.max(0, Number(patch.pausedUntil));
+  if ([1, 7, 30, 90].includes(Number(patch.retentionDays))) allowed.retentionDays = Number(patch.retentionDays);
+  if (Array.isArray(patch.ignoredApps) || typeof patch.ignoredApps === 'string') allowed.ignoredApps = patch.ignoredApps;
+  const next = {
+    ...current,
+    clipboard: normalizeClipboardPreferences({ ...current.clipboard, ...allowed }),
+  };
+  if (!saveAppSettings(next)) return { ok: false, error: 'save_failed' };
+  applyAppSettings();
+  return { ok: true, settings: publicAppSettings() };
 });
 ipcMain.handle('workspace:get', () => ({ path: workspaceRoot(), portable: workspaceRoot() !== app.getPath('userData') }));
 ipcMain.handle('workspace:load-data', () => {
@@ -1946,6 +2044,64 @@ ipcMain.handle('workspace:save-data', (event, storage) => {
 });
 ipcMain.handle('workspace:open', () => shell.openPath(workspaceRoot()));
 ipcMain.handle('workspace:choose', () => chooseWorkspaceFolder());
+ipcMain.handle('workspace:export-backup', async (event, storage) => {
+  const safeStorage = sanitizeBackupStorage(storage);
+  const settings = readAppSettings();
+  const date = new Date().toISOString().slice(0, 10);
+  const result = await showOwnedSaveDialog({
+    title: '导出 Slate 数据备份',
+    defaultPath: path.join(app.getPath('documents'), `Slate-backup-${date}.json`),
+    buttonLabel: '导出',
+    filters: [{ name: 'Slate 备份', extensions: ['json'] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, error: 'cancelled' };
+  const backup = {
+    format: 'slate-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    storage: safeStorage,
+    settings: {
+      features: settings.features,
+      defaultTab: settings.defaultTab,
+      clipboard: settings.clipboard,
+    },
+  };
+  return writeJsonFile(result.filePath, backup)
+    ? { ok: true, path: result.filePath }
+    : { ok: false, error: 'write_failed' };
+});
+ipcMain.handle('workspace:import-backup', async () => {
+  const result = await showOwnedOpenDialog({
+    title: '导入 Slate 数据备份',
+    buttonLabel: '导入',
+    properties: ['openFile'],
+    filters: [{ name: 'Slate 备份', extensions: ['json'] }],
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { ok: false, error: 'cancelled' };
+  try {
+    const filePath = result.filePaths[0];
+    if (fs.statSync(filePath).size > 8 * 1024 * 1024) return { ok: false, error: 'too_large' };
+    const document = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (document?.format !== 'slate-backup' || document?.version !== 1) return { ok: false, error: 'invalid_backup' };
+    const storage = sanitizeBackupStorage(document.storage);
+    if (!Object.keys(storage).length) return { ok: false, error: 'empty_backup' };
+    const current = readAppSettings();
+    const importedFeatures = document.settings?.features && typeof document.settings.features === 'object'
+      ? { ...current.features, ...document.settings.features, home: true }
+      : current.features;
+    const next = {
+      ...current,
+      features: importedFeatures,
+      clipboard: normalizeClipboardPreferences(document.settings?.clipboard || current.clipboard),
+      defaultTab: normalizeDefaultTabPreference(document.settings?.defaultTab, importedFeatures),
+    };
+    if (!saveAppSettings(next)) return { ok: false, error: 'save_failed' };
+    applyAppSettings();
+    return { ok: true, storage, importedKeys: Object.keys(storage).length };
+  } catch (error) {
+    return { ok: false, error: 'invalid_backup' };
+  }
+});
 
 function getLayoutMetrics(display) {
   const d = display || getWindowDisplay();
@@ -2696,6 +2852,33 @@ function readFrontmostApp() {
   });
 }
 
+async function readClipboardSourceApp() {
+  if (process.platform === 'darwin') return readFrontmostApp();
+  if (process.platform !== 'win32') return null;
+  const output = await runWindowsPowerShell([
+    "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class SlateForeground { [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId); }'",
+    '$handle = [SlateForeground]::GetForegroundWindow()',
+    '$processId = 0',
+    '[SlateForeground]::GetWindowThreadProcessId($handle, [ref]$processId) | Out-Null',
+    '$process = Get-Process -Id $processId -ErrorAction SilentlyContinue',
+    'if ($process) { @{ name = $process.ProcessName; path = $process.Path; title = $process.MainWindowTitle } | ConvertTo-Json -Compress }',
+  ].join('; '), 1800);
+  if (!output) return null;
+  try { return JSON.parse(output); } catch (error) { return null; }
+}
+
+async function shouldIgnoreClipboardSource() {
+  const ignored = readAppSettings().clipboard.ignoredApps;
+  if (!ignored.length) return false;
+  const source = await readClipboardSourceApp();
+  if (!source) return false;
+  const haystack = [source.name, source.bundleId, source.path, source.title]
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase();
+  return ignored.some((item) => haystack.includes(String(item).toLocaleLowerCase()));
+}
+
 async function rememberPasteTarget() {
   const current = await readFrontmostApp();
   if (current && !['com.github.Electron', 'com.slate.legacy', 'com.slate.app'].includes(current.bundleId)) {
@@ -3402,6 +3585,7 @@ async function pollClipboard() {
       const decision = reduceClipboardObservation(clipObservationState, { text });
       clipObservationState = decision.state;
       if (decision.record && clipPollingEnabled) {
+        if (await shouldIgnoreClipboardSource()) return;
         const type = /^https?:\/\//i.test(text.trim()) ? 'url' : 'text';
         mainWindow.webContents.send('clipboard:new-entry', { type, text, imagePath: null });
       }
@@ -3418,6 +3602,7 @@ async function pollClipboard() {
       });
       clipObservationState = decision.state;
       if (result && decision.record && clipPollingEnabled) {
+        if (await shouldIgnoreClipboardSource()) return;
         const pngBuf = result.pngBuffer
           || nativeImage.createFromBuffer(result.sourceBuffer).toPNG();
         if (!pngBuf.length) return;

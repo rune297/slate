@@ -16,6 +16,8 @@ const activePortFile = path.join(profile, 'DevToolsActivePort');
 if (fs.existsSync(activePortFile)) fs.unlinkSync(activePortFile);
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
+env.SLATE_NOTIFICATION_PORT = env.SLATE_NOTIFICATION_PORT || '43831';
+const notificationBaseUrl = `http://127.0.0.1:${env.SLATE_NOTIFICATION_PORT}`;
 const child = spawn(executable, [
   `--user-data-dir=${profile}`, '--remote-debugging-port=0',
   '--remote-debugging-address=127.0.0.1', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
@@ -85,8 +87,9 @@ async function main() {
   await send('Runtime.enable');
   await until(() => evaluate('Boolean(window.SlateHome && window.SlateWorkspace && window.slateAPI)'), 'renderer initialization');
   assert.equal(await evaluate('window.slateAPI.platform'), 'win32');
-  assert.equal(await evaluate('window.slateAPI.getAppSettings().then(s => s.features.clip)'), false);
-  assert.deepEqual(await evaluate('window.SlateHome.getVisibility().visibleIds'), ['launcher', 'recorder', 'note', 'commands']);
+  assert.equal(await evaluate('window.slateAPI.getAppSettings().then(s => s.features.clip)'), true);
+  assert.equal(await evaluate('window.slateAPI.getAppSettings().then(s => s.clipboard.captureEnabled)'), false);
+  assert.deepEqual(await evaluate('window.SlateHome.getVisibility().visibleIds'), ['launcher', 'note']);
   assert.equal(await evaluate('window.SlateHome.setModuleVisible("windows", true).ok'), false);
   assert.equal(await evaluate('window.slateAPI.listWindows().then(r => r.error)'), 'unsupported');
   await evaluate('document.getElementById("slate").click()');
@@ -97,6 +100,9 @@ async function main() {
   assert.equal(await evaluate('window.slateAPI.getAppSettings().then(r => r.autoLaunch)'), true);
   assert.equal(await evaluate('window.slateAPI.setAutoLaunch(false).then(r => r.ok)'), true);
   assert.equal(await evaluate('window.slateAPI.setPanelShortcut("Control+Shift+F9").then(r => r.ok)'), true);
+  assert.equal(await evaluate('window.slateAPI.setClipShortcut("Control+Shift+F10").then(r => r.ok)'), true);
+  assert.equal(await evaluate('window.slateAPI.setClipShortcut("").then(r => r.ok)'), true);
+  assert.equal(await evaluate('window.slateAPI.setClipboardPreferences({retentionDays:30, ignoredApps:["1Password"]}).then(r => r.ok)'), true);
   assert.equal(await evaluate('window.slateAPI.setPanelShortcut("Space").then(r => r.ok)'), true);
   if (retained) {
     assert.equal(await evaluate('localStorage.getItem("slate-home-note")'), 'Windows retained data');
@@ -118,7 +124,7 @@ async function main() {
         const stream = await original(...args); window.smokeTracks.push(...stream.getTracks()); return stream;
       };
     })()`);
-    await evaluate('document.getElementById("tab-button-home").click(); document.getElementById("record-start").click()');
+    await evaluate('window.SlateHome.setModuleVisible("recorder", true); document.getElementById("tab-button-home").click(); document.getElementById("record-start").click()');
     await until(() => evaluate('window.SlateWorkspace.isRecordingActive() && window.smokeTracks.some(t => t.kind === "audio" && t.readyState === "live")'), 'fake recording starts');
     await delay(1500);
     await evaluate('document.getElementById("record-stop").click()');
@@ -129,13 +135,13 @@ async function main() {
     await until(() => evaluate('localStorage.getItem("slate-home-note") === "Windows retained data"'), 'note persisted');
     await evaluate('window.slateAPI.saveWorkspaceData(Object.fromEntries(Object.keys(localStorage).map(k => [k, localStorage.getItem(k)])))');
   }
-  const notify = await fetch('http://127.0.0.1:43821/notify/gpt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Windows smoke complete', task_id: `smoke-${Date.now()}` }) });
+  const notify = await fetch(`${notificationBaseUrl}/notify/gpt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Windows smoke complete', task_id: `smoke-${Date.now()}` }) });
   assert.equal(notify.ok, true);
-  assert.equal((await fetch('http://127.0.0.1:43821/notify/unknown', { method: 'POST' })).status, 404);
+  assert.equal((await fetch(`${notificationBaseUrl}/notify/unknown`, { method: 'POST' })).status, 404);
   await until(() => evaluate('window.slateAPI.listTaskCompletions().then(r => r.some(i => i.title === "Windows smoke complete"))'), 'notification recorded');
   await evaluate('document.getElementById("tab-button-settings").click()');
   await delay(300);
-  assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-settings-home-module]")).filter(i => !i.closest("label").hidden).map(i => i.dataset.settingsHomeModule)'), ['launcher', 'recorder', 'note', 'commands']);
+  assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-settings-home-module]")).filter(i => !i.closest("label").hidden && i.checked).map(i => i.dataset.settingsHomeModule)'), retained ? ['launcher', 'note'] : ['launcher', 'recorder', 'note']);
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(evidence, retained ? 'retained.png' : 'windows-settings.png'), Buffer.from(screenshot.data, 'base64'));
   assert.deepEqual(exceptions, [], 'No uncaught renderer errors');

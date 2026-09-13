@@ -1,6 +1,6 @@
 {
   "name": "slate",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Slate - a lightweight desktop workspace that pulls down from the top edge",
   "main": "main.js",
   "author": "Rune",
@@ -38,7 +38,11 @@
     "productName": "Slate",
     "artifactName": "slate-${version}-${arch}.${ext}",
     "copyright": "© 2026 Rune",
-    "asar": false,
+    "asar": true,
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "directories": {
       "output": "dist.noindex",
       "buildResources": "build"
@@ -87,7 +91,14 @@
     },
     "win": {
       "icon": "build/slate-icon.png",
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "slate-${version}-windows-${arch}-setup.${ext}"
     },
     "nsis": {
