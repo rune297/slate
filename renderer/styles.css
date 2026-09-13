@@ -3899,6 +3899,10 @@ select option { background-color: var(--select-popup-bg); color: var(--text-1); 
 .tab-more-menu .tab { width: 100%; min-height: 34px; justify-content: flex-start; border-radius: 10px; }
 .tab-more-menu .tab:hover, .tab-more-menu .tab.active { background: var(--hover-bg-strong); }
 
+/* 下拉菜单会越过顶栏进入内容区，顶栏必须整体高于面板内容才能保持可点击。 */
+.panel > .topbar { z-index: 6; }
+.panel > .panels { z-index: 4; }
+
 .clip-capture-bar {
   min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 8px 10px 8px 13px; border: 1px solid var(--border-soft); border-radius: 14px;

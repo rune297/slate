@@ -1154,14 +1154,25 @@ function parseSearchStorage(key, fallback) {
   }
 }
 
+function globalSearchTodoDetail(item) {
+  if (item?.done) return '已完成';
+  const deadline = Date.parse(String(item?.deadline || ''));
+  if (!Number.isFinite(deadline)) return '收件箱';
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(deadline));
+}
+
 function globalSearchIndex() {
   const rows = [];
   const features = currentAppSettings?.features || {};
   Object.values(data || {}).flat().forEach((item) => {
     if (!item?.text) return;
-    rows.push({ kind: '待办', tab: 'todo', id: item.id, label: item.text, detail: item.done ? '已完成' : item.deadline ? formatDeadline(item.deadline) : '收件箱', item });
+    rows.push({ kind: '待办', tab: 'todo', id: item.id, label: item.text, detail: globalSearchTodoDetail(item), item });
   });
-  tabMoreButton?.classList.toggle('active', Boolean(tabMoreMenu?.querySelector(`.tab[data-tab="${name}"]`)));
   loadNoteArchive().forEach((note) => {
     const label = noteArchiveTitle(note);
     rows.push({ kind: '笔记', tab: 'notes', id: note.id, label, detail: noteArchiveExcerpt(note), text: `${label} ${note.content || ''}` });

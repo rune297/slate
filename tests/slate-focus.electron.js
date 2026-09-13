@@ -146,8 +146,10 @@ async function main() {
 
     const clipboardSearchAudit = await window.webContents.executeJavaScript(`
       (async () => {
+        addTodo('P0', '带截止时间的待办', new Date(Date.now() + 3600000).toISOString());
         await addClipEntry({ type: 'text', text: 'Slate release notes' });
         await addClipEntry({ type: 'url', text: 'https://github.com/example/slate' });
+        await addClipEntry({ type: 'text', text: '这是用于验证全局搜索的剪贴板内容结尾' });
         const input = document.getElementById('clip-search');
         input.value = 'github';
         input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -168,8 +170,57 @@ async function main() {
       searchValueAfterEscape: '',
       matchedCount: 1,
       matchedGithub: true,
-      restoredCount: 2,
+      restoredCount: 3,
     }, '剪贴板搜索应即时过滤文字和链接，并可用 Escape 清空查询');
+
+    const globalClipboardSearchAudit = await window.webContents.executeJavaScript(`
+      (async () => {
+        await setMode(true);
+        document.getElementById('global-search-open').click();
+        const input = document.getElementById('global-search-input');
+        input.value = '结尾';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        const results = [...document.querySelectorAll('#global-search-results .global-search-result')];
+        return {
+          resultCount: results.length,
+          clipboardResult: results.some((item) => item.dataset.resultKind === '剪贴板'
+            && item.textContent.includes('剪贴板内容结尾')),
+          emptyMessage: document.getElementById('global-search-results').textContent.includes('没有找到相关内容'),
+        };
+      })()
+    `);
+    assert.deepEqual(globalClipboardSearchAudit, {
+      resultCount: 1,
+      clipboardResult: true,
+      emptyMessage: false,
+    }, '全局搜索应能按剪贴板内容末尾的连续文字返回对应记录');
+
+    const moreMenuAudit = await window.webContents.executeJavaScript(`
+      (async () => {
+        document.getElementById('global-search').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        const more = document.getElementById('tab-more');
+        more.click();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const settings = document.getElementById('tab-button-settings');
+        const rect = settings.getBoundingClientRect();
+        const hitTarget = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        hitTarget?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        const result = {
+          menuWasHit: Boolean(hitTarget?.closest('#tab-button-settings')),
+          settingsActivated: document.getElementById('tab-settings').classList.contains('active'),
+          menuClosed: document.getElementById('tab-more-menu').hidden,
+        };
+        await setMode(false);
+        return result;
+      })()
+    `);
+    assert.deepEqual(moreMenuAudit, {
+      menuWasHit: true,
+      settingsActivated: true,
+      menuClosed: true,
+    }, '更多菜单必须浮在内容区上方，并能通过真实命中位置打开设置');
 
     const topbarTabAndSpaceToggle = await window.webContents.executeJavaScript(`
       (async () => {
