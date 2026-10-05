@@ -121,6 +121,7 @@
         </div>
 
         <div class="panels" id="panels">
+
           <section id="tab-home" class="tab-panel" role="tabpanel" aria-labelledby="tab-button-home" aria-hidden="true" inert>
             <div class="home-bento" id="home-bento" aria-label="可长按拖动调整的首页布局">
               <!-- 快速录音与实时转写 -->
@@ -210,14 +211,11 @@
                 </div>
               </section>
 
-              <!-- 常用指令 -->
-              <section class="tile home-commands" data-home-module="commands" data-widget-size="medium">
-                <div class="tile-head">
-                  <span class="tile-label">常用指令</span>
-                  <button class="bulk-delete" id="command-bulk-delete" type="button" hidden>删除</button>
-                </div>
-                <input class="command-add" id="command-add" type="text" placeholder="输入指令，回车保存…" maxlength="500" autocomplete="off" spellcheck="false" />
-                <div class="command-list" id="command-list"></div>
+              <section class="tile home-translation" data-home-module="translation" data-widget-size="medium" aria-label="快捷翻译">
+                <div class="tile-head"><span class="tile-label">快捷翻译</span><button id="translation-paste" type="button">剪贴板翻译</button></div>
+                <div class="translation-inline-controls"><label aria-label="原文语言"><select id="translation-source"><option value="auto">自动识别</option><option value="en">英语</option><option value="ja">日语</option><option value="ko">韩语</option><option value="fr">法语</option><option value="de">德语</option><option value="es">西班牙语</option><option value="it">意大利语</option><option value="pt">葡萄牙语</option><option value="ru">俄语</option><option value="ar">阿拉伯语</option><option value="vi">越南语</option><option value="th">泰语</option><option value="id">印尼语</option><option value="nl">荷兰语</option><option value="pl">波兰语</option><option value="tr">土耳其语</option><option value="uk">乌克兰语</option><option value="hi">印地语</option><option value="zh">中文</option></select></label><button id="translation-run" type="button">翻译</button></div>
+                <div class="translation-editors"><textarea id="translation-input" aria-label="翻译原文" maxlength="6000" placeholder="粘贴原文…"></textarea><textarea id="translation-output" aria-label="中文译文" readonly placeholder="中文译文"></textarea></div>
+                <div class="translation-inline-footer"><span id="translation-status" role="status" aria-live="polite">文字仅在本机处理</span><button id="translation-copy" type="button" disabled>复制</button><button id="translation-release" type="button" title="停止翻译并释放模型内存">停止</button></div>
               </section>
 
             </div>
@@ -389,7 +387,19 @@
                   <p>密钥由系统安全存储加密，仅在你主动查看或复制时解密。</p>
                 </section>
 
-                <section class="tile settings-card settings-features-card">
+                <section class="tile settings-card"><div class="settings-card-heading"><div><span class="tile-label">本地翻译</span><strong>模型与快捷键</strong></div></div>
+ <div class="translation-setup" id="translation-setup"><p>首次联网下载约 610 MB 模型，建议预留 1 GB 空间。此后离线翻译，空闲一分钟释放内存。</p><button id="translation-install" type="button">下载模型</button><button id="translation-import" type="button">导入本地模型</button></div>
+ <p id="translation-install-status" role="status"></p><p>快捷键读取剪贴板并直接在首页翻译；短句识别不准时可手动选择语言。</p><button id="translation-shortcut" type="button">设置快捷键</button><button id="translation-shortcut-clear" type="button">清除快捷键</button></section>
+               <!-- 常用指令 -->
+              <section class="tile settings-card home-commands" >
+                <div class="tile-head">
+                  <span class="tile-label">常用指令</span>
+                  <button class="bulk-delete" id="command-bulk-delete" type="button" hidden>删除</button>
+                </div>
+                <input class="command-add" id="command-add" type="text" placeholder="输入指令，回车保存…" maxlength="500" autocomplete="off" spellcheck="false" />
+                <div class="command-list" id="command-list"></div>
+              </section>
+<section class="tile settings-card settings-features-card">
                   <div class="settings-card-heading">
                     <div><span class="tile-label">工作区</span><strong>显示功能</strong></div>
                     <small>首页与设置始终显示</small>
@@ -414,7 +424,7 @@
                     <label><span><b>快速录音</b><small data-home-module-setting-note="recorder">录音与转写</small></span><input type="checkbox" data-settings-home-module="recorder" aria-label="显示快速录音" /><i aria-hidden="true"></i></label>
                     <label><span><b>当前窗口</b><small>窗口快速切换</small></span><input type="checkbox" data-settings-home-module="windows" aria-label="显示当前窗口" /><i aria-hidden="true"></i></label>
                     <label><span><b>随笔记</b><small>首页快速记录</small></span><input type="checkbox" data-settings-home-module="note" aria-label="显示随笔记" /><i aria-hidden="true"></i></label>
-                    <label><span><b>常用指令</b><small>提示词快捷入口</small></span><input type="checkbox" data-settings-home-module="commands" aria-label="显示常用指令" /><i aria-hidden="true"></i></label>
+                    <label><span><b>快捷翻译</b><small>剪贴板直接译中文</small></span><input type="checkbox" data-settings-home-module="translation" aria-label="显示快捷翻译" /><i aria-hidden="true"></i></label>
                   </div>
                 </section>
               </div>
@@ -571,6 +581,7 @@
     <script src="effects.js"></script>
     <script src="app.js"></script>
     <script src="workspace.js"></script>
+    <script src="translation.js"></script>
     <script src="icon-motion.js"></script>
   </body>
 </html>

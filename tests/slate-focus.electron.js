@@ -645,7 +645,7 @@ async function main() {
           recorder: ['.recorder-head', '.home-transcript:not([hidden])', '.recorder-controls'],
           windows: ['.tile-head', '.window-list'],
           note: ['.note-toolbar', '.note-body'],
-          commands: ['.tile-head', '.command-add', '.command-list'],
+          translation: ['.tile-head', '.translation-inline-controls', '.translation-editors'],
         };
         const tiles = [...document.querySelectorAll('#home-bento [data-home-module]')]
           .filter((tile) => !tile.hidden)
@@ -754,7 +754,7 @@ async function main() {
       window.setSize(width, height);
       const matrix = await window.webContents.executeJavaScript(`
         (async () => {
-          const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
+          const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
           ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
           const results = [];
           for (let count = 5; count >= 1; count -= 1) {
@@ -797,20 +797,20 @@ async function main() {
 
     const transactionAudit = await window.webContents.executeJavaScript(`
       (() => {
-        const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         const first = window.SlateHome.setModuleVisible('recorder', false);
         const second = window.SlateHome.setModuleVisible('note', false);
         const rapidHidden = [...window.SlateHome.getVisibility().hiddenIds];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
-        window.SlateHome.setModuleVisible('commands', false);
-        window.SlateHome.setModuleVisible('commands', true);
-        window.SlateHome.setModuleVisible('commands', false);
+        window.SlateHome.setModuleVisible('translation', false);
+        window.SlateHome.setModuleVisible('translation', true);
+        window.SlateHome.setModuleVisible('translation', false);
         let eventCount = 0;
         const onChange = () => { eventCount += 1; };
         document.addEventListener('slate:home-modules-changed', onChange);
         const storageBeforeNoop = localStorage.getItem('slate-home-hidden-modules-v1');
-        const noop = window.SlateHome.setModuleVisible('commands', false);
+        const noop = window.SlateHome.setModuleVisible('translation', false);
         const noOpStorageStable = storageBeforeNoop === localStorage.getItem('slate-home-hidden-modules-v1');
         document.removeEventListener('slate:home-modules-changed', onChange);
         const beforeRollback = {
@@ -868,7 +868,7 @@ async function main() {
 
     const persistenceAndRecorderAudit = await window.webContents.executeJavaScript(`
       (() => {
-        const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         const originalSetItem = Storage.prototype.setItem;
         const storedBefore = localStorage.getItem('slate-home-hidden-modules-v1');
@@ -883,7 +883,7 @@ async function main() {
         ['launcher', 'recorder', 'windows', 'note'].forEach((id) => {
           window.SlateHome.setModuleVisible(id, false);
         });
-        const rejectedWhileDirty = window.SlateHome.setModuleVisible('commands', false);
+        const rejectedWhileDirty = window.SlateHome.setModuleVisible('translation', false);
         Storage.prototype.setItem = originalSetItem;
         const recovered = window.SlateHome.setModuleVisible('launcher', true);
         const recoveredState = window.SlateHome.getVisibility();
@@ -995,7 +995,7 @@ async function main() {
 
     const lifecycleAudit = await window.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         document.getElementById('tab-button-home').click();
         document.getElementById('app').classList.remove('collapsed', 'closing', 'opening');
@@ -1054,7 +1054,7 @@ async function main() {
 
     const autoLayoutMotionAudit = await window.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['launcher', 'recorder', 'windows', 'note', 'commands'];
+        const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         document.getElementById('tab-button-home').click();
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));

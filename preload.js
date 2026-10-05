@@ -8,6 +8,15 @@ function subscribe(channel, handler) {
 }
 
 contextBridge.exposeInMainWorld('slateAPI', {
+  translationStatus: () => ipcRenderer.invoke('translation:status'),
+  translationClipboard: () => ipcRenderer.invoke('translation:clipboard'),
+  translateLocal: payload => ipcRenderer.invoke('translation:run',payload),
+  installTranslation: () => ipcRenderer.invoke('translation:install'),
+  releaseTranslation: () => ipcRenderer.invoke('translation:release'),
+  importTranslation: () => ipcRenderer.invoke('translation:import'),
+  setTranslationShortcut: value => ipcRenderer.invoke('translation:shortcut',value),
+  onTranslationEvent: cb => subscribe('translation:event',(event,payload)=>cb(payload)),
+  onOpenTranslation: cb => subscribe('translation:open',()=>cb()),
   platform: process.platform,
   setMode: (mode) => ipcRenderer.invoke('window:set-mode', mode),
   setPinned: (pinned) => ipcRenderer.invoke('window:set-pinned', pinned === true),

@@ -23,6 +23,80 @@ const dns = require('dns');
 const zlib = require('zlib');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const { fork } = require('child_process');
+const { TranslationService } = require('./translation-service.cjs');
+let translationService;
+let translationShortcut = '';
+let translationProxy = '';
+function localTranslator() {
+  translationService ||= new TranslationService({
+    root: path.join(app.getPath('userData'), 'translation-models'),
+    spawn: () => fork(path.join(__dirname,'translation-worker.cjs'), [], {
+      execPath: process.execPath, env: {...process.env, ...(translationProxy ? {HTTPS_PROXY:translationProxy} : {}), ELECTRON_RUN_AS_NODE:'1'},
+      windowsHide:true, stdio:['ignore','pipe','pipe','ipc'],
+    }),
+    notify: payload => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('translation:event', payload); },
+  });
+  return translationService;
+}
+ipcMain.handle('translation:status', () => ({...localTranslator().status(), shortcut:translationShortcut}));
+ipcMain.handle('translation:clipboard', async () => String(await clipboard.readText()).slice(0,6000));
+ipcMain.handle('translation:run', async (event,payload) => {
+  try { return {ok:true,...await localTranslator().run('translate',String(payload?.text || ''),payload?.source || 'auto')}; }
+  catch (error) { return {ok:false,error:error.message}; }
+});
+ipcMain.handle('translation:install', async () => {
+  try {
+    const proxy=await require('electron').session.defaultSession.resolveProxy('https://huggingface.co');
+    const match=proxy.match(/(?:^|;\s*)PROXY\s+([^;]+)/);
+    translationProxy=match ? `http://${match[1]}` : '';
+    return {ok:true,...await localTranslator().run('install')};
+  }
+  catch (error) { return {ok:false,error:error.message}; }
+});
+ipcMain.handle('translation:import', async () => {
+  const service=localTranslator();
+  if(service.status().busy) return {ok:false,error:'请先停止当前任务'};
+  const result=await dialog.showOpenDialog(mainWindow,{title:'选择 translation-models 文件夹（包含 Xenova 子目录）',properties:['openDirectory'],defaultPath:path.join(app.getPath('home'),'AppData','Local','Slate','translation-models')});
+  if(result.canceled || !result.filePaths[0]) return {cancelled:true};
+  const source=result.filePaths[0];
+  const files=['config.json','generation_config.json','tokenizer_config.json','tokenizer.json','onnx/encoder_model_quantized.onnx','onnx/decoder_model_merged_quantized.onnx'];
+  const staging=service.root+'-import';
+  try {
+    for(const name of files) {
+      const input=path.join(source,'Xenova','m2m100_418M',name);
+      if(!fs.existsSync(input) || fs.statSync(input).size<100) throw new Error('模型文件不完整，请选择包含 Xenova 子目录的 translation-models 文件夹');
+    }
+    if(path.resolve(source)===path.resolve(service.root)) return {ok:true,...await service.run('import')};
+    service.release();
+    fs.mkdirSync(staging,{recursive:true});
+    for(const name of files) {
+      const output=path.join(staging,'Xenova','m2m100_418M',name);
+      fs.mkdirSync(path.dirname(output),{recursive:true});fs.copyFileSync(path.join(source,'Xenova','m2m100_418M',name),output);
+    }
+    const verifier=new TranslationService({root:staging,spawn:service.spawn,notify:service.notify});
+    try {await verifier.run('import');} finally {verifier.release();}
+    fs.mkdirSync(service.root,{recursive:true});
+    fs.cpSync(path.join(staging,'Xenova'),path.join(service.root,'Xenova'),{recursive:true});
+    fs.copyFileSync(path.join(staging,'ready.json'),path.join(service.root,'ready.json'));
+    return {ok:true};
+  } catch(error) {return {ok:false,error:error.message};}
+  finally {fs.rmSync(staging,{recursive:true,force:true});}
+});
+ipcMain.handle('translation:release', () => { localTranslator().release(); return true; });
+function configureTranslationShortcut(value) {
+  if (value && (!isValidClipboardShortcut(value) || !/(Control|Alt|Shift)\+/.test(value))) return false;
+  if (value === translationShortcut) return true;
+  if (value && (value === configuredShortcut || value === configuredClipShortcut || globalShortcut.isRegistered(value))) return false;
+  if (value && !globalShortcut.register(value,()=>openRendererPanel('translation:open'))) return false;
+  if (translationShortcut) globalShortcut.unregister(translationShortcut);
+  translationShortcut=value; return true;
+}
+ipcMain.handle('translation:shortcut', (event,value) => {
+  if (typeof value !== 'string' || !configureTranslationShortcut(value)) return {ok:false,error:'occupied'};
+  writeJsonFile(getJsonSettingsPath('translation-settings.json'),{shortcut:value});
+  return {ok:true};
+});
 const platformPolicy = require('./platform');
 const PLATFORM_CAPABILITIES = platformPolicy.capabilities(process.platform);
 const {
@@ -1742,7 +1816,7 @@ function isValidPanelShortcut(shortcut) {
 
 function setPanelShortcut(shortcut) {
   if (!isValidPanelShortcut(shortcut)) return false;
-  if (shortcut === configuredClipShortcut) return false;
+  if (shortcut === configuredClipShortcut || shortcut === translationShortcut) return false;
   if (shortcut === configuredShortcut) {
     if (shortcut === 'Space') return true;
     if (globalShortcut.isRegistered(shortcut)) return true;
@@ -1782,7 +1856,7 @@ function setPanelShortcut(shortcut) {
 }
 
 function setClipboardShortcut(shortcut) {
-  if (!isValidClipboardShortcut(shortcut) || (shortcut && shortcut === configuredShortcut)) return false;
+  if (!isValidClipboardShortcut(shortcut) || (shortcut && (shortcut === configuredShortcut || shortcut === translationShortcut))) return false;
   const previous = configuredClipShortcut;
   if (!shortcut) {
     if (previous && globalShortcut.isRegistered(previous)) globalShortcut.unregister(previous);
@@ -1817,6 +1891,7 @@ function applyAppSettings() {
     saveAppSettings(settings);
     setClipboardShortcut('');
   }
+  configureTranslationShortcut(readJsonFile(getJsonSettingsPath('translation-settings.json')).shortcut || '');
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
 }
 
@@ -1980,6 +2055,7 @@ ipcMain.handle('settings:set-clip-shortcut', (event, accelerator) => {
   const next = readAppSettings();
   next.clipShortcut = value;
   if (!saveAppSettings(next)) return { ok: false, error: 'save_failed' };
+  configureTranslationShortcut(readJsonFile(getJsonSettingsPath('translation-settings.json')).shortcut || '');
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
   refreshTrayMenu();
   return { ok: true, shortcut: value, settings: publicAppSettings() };
@@ -3916,6 +3992,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {});
 
 app.on('before-quit', () => {
+  translationService?.release();
   isQuitting = true;
   hideWhenCollapsed = false;
 });

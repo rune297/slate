@@ -71,7 +71,7 @@ test('settings exposes exactly one switch for every homepage widget', () => {
   const switches = [...html.matchAll(/data-settings-home-module="([^"]+)"/g)]
     .map((match) => match[1]);
   assert.deepEqual(switches, [
-    'launcher', 'recorder', 'windows', 'note', 'commands',
+    'launcher', 'recorder', 'windows', 'note', 'translation',
   ]);
   assert.match(workspaceJs, /isRecordingActive/);
   assert.match(workspaceJs, /recording_active/);

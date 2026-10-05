@@ -64,6 +64,7 @@ function collectLocalStorageSnapshot() {
 }
 
 let workspaceReloadPending = false;
+let workspaceHydrating = !!window.slateAPI?.loadWorkspaceData;
 async function hydratePortableWorkspace() {
   if (!window.slateAPI?.loadWorkspaceData) return;
   try {
@@ -105,6 +106,7 @@ async function hydratePortableWorkspace() {
       }
     }, 5000);
   } catch (error) {}
+  finally { workspaceHydrating = false; }
 }
 // Do not interrupt parser-loaded workspace scripts with a recovery navigation.
 if (document.readyState === 'loading') {
@@ -906,7 +908,7 @@ function positionIndicator() {
   if (!btn || !tabIndicator) return;
   const direct = btn.parentElement === tabsContainer;
   tabIndicator.style.opacity = direct ? '1' : '0';
-  tabMoreButton?.classList.toggle('active', !direct);
+  tabMoreButton?.classList.toggle('active', !!btn.closest('.tab-more-menu'));
   tabIndicator.style.width = `${btn.offsetWidth}px`;
   tabIndicator.style.transform = `translateX(${btn.offsetLeft}px)`;
 }
@@ -1196,7 +1198,7 @@ function globalSearchIndex() {
   }
   const commands = parseSearchStorage('slate-home-commands', []);
   if (Array.isArray(commands)) commands.forEach((command) => {
-    if (command?.text) rows.push({ kind: '常用指令', tab: 'home', id: command.id || '', label: command.text, detail: '首页快捷指令', text: command.text });
+    if (command?.text) rows.push({ kind: '常用指令', tab: 'settings', id: command.id || '', label: command.text, detail: '设置中的常用指令', text: command.text });
   });
   if (features.recordings !== false) {
     const recordings = parseSearchStorage('slate-recordings', []);
@@ -2465,7 +2467,7 @@ if (noteInput) {
   const saveNote = () => {
     if (noteTimer) clearTimeout(noteTimer);
     noteTimer = null;
-    if (workspaceReloadPending) return;
+    if (workspaceReloadPending || workspaceHydrating) return;
     try {
       localStorage.setItem(NOTE_KEY, noteInput.value);
     } catch (e) {
@@ -2845,15 +2847,15 @@ if (notePreview) {
 const HOME_ORDER_KEY = 'slate-home-order-v3';
 const HOME_SIZES_KEY = 'slate-home-widget-sizes-v2';
 const HOME_HIDDEN_MODULES_KEY = 'slate-home-hidden-modules-v1';
-const HOME_MODULE_REGISTRY = ['launcher', 'recorder', 'windows', 'note', 'commands'];
+const HOME_MODULE_REGISTRY = ['launcher', 'recorder', 'windows', 'note', 'translation'];
 const unavailableHomeModules = window.SlatePlatform.capabilities(window.slateAPI?.platform || 'darwin').unavailableHomeModules;
 const effectiveHomeHidden = (hidden) => window.SlatePlatform.effectiveHiddenModules(hidden, HOME_MODULE_REGISTRY, unavailableHomeModules);
-const HOME_ORDER_DEFAULTS = ['note', 'launcher', 'recorder', 'commands', 'windows'];
+const HOME_ORDER_DEFAULTS = ['note', 'translation', 'launcher', 'windows', 'recorder'];
 const HOME_SIZE_DEFAULTS = {
   note: 'large',
   launcher: 'medium',
   recorder: 'medium',
-  commands: 'medium',
+  translation: 'medium',
   windows: 'medium',
 };
 const HOME_SIZE_LABELS = { mini: '迷你', small: '小', medium: '中', large: '大' };
@@ -2864,7 +2866,7 @@ const homeTiles = homeBento
 
 function loadHomeOrder() {
   try {
-    const rawSaved = JSON.parse(localStorage.getItem(HOME_ORDER_KEY) || 'null');
+    const rawSaved = JSON.parse(localStorage.getItem(HOME_ORDER_KEY) || 'null')?.map(id => id === 'commands' ? 'translation' : id);
     if (Array.isArray(rawSaved)) {
       // 版本升级会增删首页模块：保留仍然存在的模块及其相对顺序，
       // 新增模块按默认顺序补到末尾，已下线模块自动丢弃。
@@ -2899,7 +2901,7 @@ function loadHomeSizes() {
 function loadHiddenHomeModules() {
   try {
     const rawText = localStorage.getItem(HOME_HIDDEN_MODULES_KEY);
-    if (rawText === null) return { hiddenIds: ['recorder', 'commands'], needsRepair: true };
+    if (rawText === null) return { hiddenIds: ['recorder'], needsRepair: true };
     const parsed = JSON.parse(rawText);
     const hiddenIds = window.SlateDomain.normalizeHiddenHomeModules(parsed, HOME_MODULE_REGISTRY);
     return {

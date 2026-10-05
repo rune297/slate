@@ -1,6 +1,6 @@
 {
   "name": "slate",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Slate - a lightweight desktop workspace that pulls down from the top edge",
   "main": "main.js",
   "author": "Rune",
@@ -48,6 +48,8 @@
     "files": [
       "main.js",
       "main-services.js",
+      "translation-service.cjs",
+      "translation-worker.cjs",
       "platform.js",
       "hotzone.html",
       "build/slate-icon.png",
@@ -85,6 +87,9 @@
     }
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "franc-min": "^6.2.0",
+    "undici": "^7.29.0",
     "ws": "^8.21.3"
   }
 }
