@@ -9,7 +9,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Slate</title>
     <script src="theme-bootstrap.js"></script>
+    <link rel="stylesheet" href="brand.css" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="settings.css" />
   </head>
   <body>
     <div id="app" class="collapsed">
@@ -94,6 +96,27 @@
             </button>
             </div>
           </div>
+          <div class="quick-recorder" id="quick-recorder" role="group" aria-label="快速录音" data-state="idle">
+            <div class="quick-record-status">
+              <span class="recording-state-dot" id="home-recording-dot" aria-hidden="true"></span>
+              <span id="home-recording-state" role="status" aria-live="polite">快速录音</span>
+              <time id="home-recording-time">00:00</time>
+            </div>
+            <button class="record-control record-start" id="record-start" type="button" aria-label="开始录音" title="开始录音">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg><span data-record-label>录音</span>
+            </button>
+            <button class="record-control" id="record-pause" type="button" aria-label="暂停录音" title="暂停录音" disabled hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M9 7v10M15 7v10"/></svg><span data-record-label>暂停</span>
+            </button>
+            <button class="record-control" id="record-stop" type="button" aria-label="停止并保存录音" title="停止并保存录音" disabled hidden>
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg><span data-record-label>停止保存</span>
+            </button>
+            <button class="record-control" id="record-retry" type="button" hidden>重试保存</button>
+            <button class="record-control" id="record-discard" type="button" hidden>放弃</button>
+            <button class="quick-record-library" id="record-open-library" type="button" aria-label="查看录音与转写" title="查看录音与转写">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg>
+            </button>
+          </div>
           <div class="panel-tools" aria-label="面板工具">
             <button class="topbar-action" id="global-search-open" type="button" aria-label="搜索全部内容" title="搜索全部内容（Ctrl+K）">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
@@ -108,8 +131,18 @@
           <div class="global-search-field">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
             <input id="global-search-input" type="search" placeholder="搜索待办、笔记、剪贴板和更多内容…" aria-label="搜索全部 Slate 内容" autocomplete="off" spellcheck="false" />
+            <button id="global-capture-open" type="button">处理剪贴板</button>
             <kbd>Esc</kbd>
           </div>
+          <section id="global-capture" role="dialog" aria-modal="true" aria-labelledby="capture-title" hidden>
+            <div>
+              <header><strong id="capture-title">处理这段文字</strong><button id="capture-close" type="button" aria-label="关闭文字处理">关闭</button></header>
+              <p>选择一种处理方式，原文会完整保留。最多 6000 字符。</p>
+              <textarea id="capture-text" maxlength="6000" aria-label="要处理的文字" placeholder="读取剪贴板后，可在这里修改…"></textarea>
+              <footer><button id="capture-translate" type="button">译成中文</button><button id="capture-note" type="button">存为笔记</button><button id="capture-task" type="button">转为待办</button></footer>
+              <p id="capture-feedback" role="status" aria-live="polite"></p>
+            </div>
+          </section>
           <div class="global-search-results" id="global-search-results" role="listbox"></div>
         </section>
 
@@ -124,28 +157,6 @@
 
           <section id="tab-home" class="tab-panel" role="tabpanel" aria-labelledby="tab-button-home" aria-hidden="true" inert>
             <div class="home-bento" id="home-bento" aria-label="可长按拖动调整的首页布局">
-              <!-- 快速录音与实时转写 -->
-              <section class="tile home-recorder" id="home-recorder" data-home-module="recorder" data-widget-size="medium">
-                <canvas class="recording-strands" id="recording-strands" aria-hidden="true"></canvas>
-                <div class="recorder-head">
-                  <span class="recording-state-dot" id="home-recording-dot"></span>
-                  <span class="tile-label" id="home-recording-state">快速录音</span>
-                  <time id="home-recording-time">00:00</time>
-                </div>
-                <p class="home-transcript" id="home-live-transcript" aria-live="polite" hidden></p>
-                <div class="recorder-controls">
-                  <button class="record-control record-start" id="record-start" type="button" aria-label="开始录音">
-                    <span></span>
-                  </button>
-                  <button class="record-control" id="record-pause" type="button" aria-label="暂停录音" disabled>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 7v10M15 7v10" /></svg>
-                  </button>
-                  <button class="record-control" id="record-stop" type="button" aria-label="结束录音" disabled>
-                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" /></svg>
-                  </button>
-                </div>
-              </section>
-
               <!-- 快速启动：自定义常用软件 -->
               <section class="tile home-launcher" data-home-module="launcher" data-widget-size="small" aria-label="快速启动">
                 <div class="tile-head">
@@ -177,42 +188,35 @@
                 </div>
               </section>
 
-              <!-- 速记 -->
-              <section class="tile home-note" data-home-module="note" data-widget-size="large">
-                <div class="note-toolbar" role="toolbar" aria-label="随笔记操作">
-                  <span class="tile-label">随笔记</span>
-                  <div class="note-format-actions" id="note-format-actions" role="group" aria-label="Markdown 格式">
-                    <button class="note-tool" type="button" data-note-format="bold" title="加粗" aria-label="加粗"><span class="note-tool-glyph note-tool-bold">B</span></button>
-                    <button class="note-tool" type="button" data-note-format="italic" title="斜体" aria-label="斜体"><span class="note-tool-glyph note-tool-italic">I</span></button>
-                    <button class="note-tool" type="button" data-note-format="heading" title="标题" aria-label="标题"><span class="note-tool-glyph note-tool-bold">H</span></button>
-                    <button class="note-tool" type="button" data-note-format="bullet" title="无序列表" aria-label="无序列表"><span class="note-tool-glyph note-tool-bullet">•</span></button>
-                    <button class="note-tool" type="button" data-note-format="ordered" title="有序列表" aria-label="有序列表"><span class="note-tool-glyph note-tool-small">1.</span></button>
-                    <button class="note-tool" type="button" data-note-format="task" title="待办" aria-label="待办"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg></button>
-                    <button class="note-tool" type="button" data-note-format="quote" title="引用" aria-label="引用"><span class="note-tool-glyph note-tool-quote">“</span></button>
-                    <button class="note-tool" type="button" data-note-format="code" title="行内代码" aria-label="行内代码"><span class="note-tool-glyph note-tool-code">&lt;/&gt;</span></button>
-                    <button class="note-tool" type="button" data-note-format="link" title="插入链接" aria-label="插入链接"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.4 13.6a3.6 3.6 0 0 0 5.1 0l2.9-2.9a3.6 3.6 0 0 0-5.1-5.1l-1 1"/><path d="M13.6 10.4a3.6 3.6 0 0 0-5.1 0l-2.9 2.9a3.6 3.6 0 0 0 5.1 5.1l1-1"/></svg></button>
+              <!-- 首页待办：先看到安排与进度，再随手添加 -->
+              <section class="tile home-tasks" id="home-tasks" data-home-module="tasks" data-widget-size="large" aria-label="今日待办">
+                <div class="task-home-head"><span class="tile-label" id="home-task-title">今日待办</span><button id="home-work-open" type="button">全部任务 ↗</button></div>
+                <div class="home-work-planning">
+                  <div class="home-work-section-head"><div class="home-period-tabs" role="group" aria-label="查看任务安排"><button type="button" data-home-period="day" class="active" aria-pressed="true">今天</button><button type="button" data-home-period="week" aria-pressed="false">本周</button><button type="button" data-home-period="later" aria-pressed="false">以后</button></div><span id="home-focus-summary" class="home-focus-summary" role="status"></span></div>
+                  <progress id="home-task-progress" value="0" max="1" aria-label="今日待办完成进度"></progress>
+                  <div class="home-task-scroll"><ul id="home-focus-list" class="home-focus-list" aria-label="当前安排的任务"></ul>
+                    <button id="home-completed-toggle" class="home-completed-toggle" type="button" aria-expanded="false" aria-controls="home-completed-list" hidden>查看已完成</button><ul id="home-completed-list" class="home-focus-list" hidden></ul>
                   </div>
-                  <div class="note-persist-actions" role="group" aria-label="速记保存操作">
-                    <button class="note-mode active" id="note-edit-btn" type="button" aria-label="编辑与预览切换" title="编辑与预览切换" aria-pressed="true">完成</button>
-                    <button class="note-mode note-save-btn" id="note-save-btn" type="button" aria-label="保存笔记" title="保存笔记">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>
-                    </button>
-                  </div>
+                  <div class="home-task-add-row"><input id="home-task-input" type="text" maxlength="80" placeholder="添加今天要做的事，回车确认" aria-label="添加任务" autocomplete="off" /><button id="home-task-add" type="button">添加</button></div>
+                </div>
+              </section>
+
+              <!-- 随手笔记：直接写，自动保存到笔记库 -->
+              <section class="tile home-note" data-home-module="note" data-widget-size="medium" aria-label="随手笔记">
+                <div class="note-toolbar" role="toolbar" aria-label="随手笔记操作">
+                  <span class="tile-label">随手笔记</span>
+                  <span id="home-note-save-state" role="status" aria-live="polite"></span>
+                  <button id="home-note-new" type="button" title="保留当前笔记，再写新的一条">新一条</button>
                 </div>
                 <div class="note-body">
-                  <textarea
-                    id="home-note"
-                    class="note-input"
-                    placeholder="用 Markdown 随手记点什么…"
-                    aria-label="Markdown 速记内容"
-                    spellcheck="false"
-                  ></textarea>
-                  <div class="note-preview" id="home-note-preview" tabindex="0" role="document" aria-label="速记预览" hidden></div>
+                  <textarea id="home-note" class="note-input" placeholder="想到什么，直接写在这里…&#10;会自动保存到笔记，不用点保存。" aria-label="随手笔记内容" spellcheck="false"></textarea>
+                  <div class="note-preview" id="home-note-preview" hidden></div>
                 </div>
               </section>
 
               <section class="tile home-translation" data-home-module="translation" data-widget-size="medium" aria-label="快捷翻译">
                 <div class="tile-head"><span class="tile-label">快捷翻译</span><button id="translation-paste" type="button">剪贴板翻译</button></div>
+                <button id="translation-prepare" type="button" hidden>准备离线翻译</button>
                 <div class="translation-inline-controls"><label aria-label="原文语言"><select id="translation-source"><option value="auto">自动识别</option><option value="en">英语</option><option value="ja">日语</option><option value="ko">韩语</option><option value="fr">法语</option><option value="de">德语</option><option value="es">西班牙语</option><option value="it">意大利语</option><option value="pt">葡萄牙语</option><option value="ru">俄语</option><option value="ar">阿拉伯语</option><option value="vi">越南语</option><option value="th">泰语</option><option value="id">印尼语</option><option value="nl">荷兰语</option><option value="pl">波兰语</option><option value="tr">土耳其语</option><option value="uk">乌克兰语</option><option value="hi">印地语</option><option value="zh">中文</option></select></label><button id="translation-run" type="button">翻译</button></div>
                 <div class="translation-editors"><textarea id="translation-input" aria-label="翻译原文" maxlength="6000" placeholder="粘贴原文…"></textarea><textarea id="translation-output" aria-label="中文译文" readonly placeholder="中文译文"></textarea></div>
                 <div class="translation-inline-footer"><span id="translation-status" role="status" aria-live="polite">文字仅在本机处理</span><button id="translation-copy" type="button" disabled>复制</button><button id="translation-release" type="button" title="停止翻译并释放模型内存">停止</button></div>
@@ -225,9 +229,9 @@
             <div class="todo-shell">
               <aside class="todo-rail tile">
                 <div class="todo-rail-views">
-                  <button class="todo-view is-active" data-view="today" type="button" title="今天到期、已过期、以及手动加入今天的事"><span>今天</span><em data-view-count="today">0</em></button>
-                  <button class="todo-view" data-view="upcoming" type="button" title="安排在明天及以后的待办"><span>已排期</span><em data-view-count="upcoming">0</em></button>
-                  <button class="todo-view" data-view="inbox" type="button" title="还没安排截止时间的待办，随手记下来稍后安排"><span>收件箱</span><em data-view-count="inbox">0</em></button>
+                  <button class="todo-view is-active" data-view="today" type="button" title="今天的安排，以及之前未完成的任务"><span>今天</span><em data-view-count="today">0</em></button>
+                  <button class="todo-view" data-view="upcoming" type="button" title="本周的安排，包含今天的任务"><span>本周</span><em data-view-count="upcoming">0</em></button>
+                  <button class="todo-view" data-view="inbox" type="button" title="以后再做、还未确定日期及未来的安排"><span>以后</span><em data-view-count="inbox">0</em></button>
                   <button class="todo-view" data-view="done" type="button" title="已完成的待办留档"><span>已完成</span><em data-view-count="done">0</em></button>
                 </div>
                 <div class="todo-rail-tags">
@@ -241,7 +245,7 @@
                   <input
                     id="todo-quick-input"
                     type="text"
-                    placeholder="记一件事… 回车保存，支持「明天」「周五 20:00」"
+                    placeholder="输入任务… 可写「明天交稿」「周五 15:00」"
                     aria-label="快速添加待办"
                     maxlength="80"
                     autocomplete="off"
@@ -253,17 +257,22 @@
                     <option value="P2">Vibe coding</option>
                     <option value="P3" selected>日常</option>
                   </select>
-                  <button class="todo-deadline-trigger" id="todo-quick-deadline" type="button" aria-label="选择截止时间"><span>日期</span></button>
+                  <select id="todo-quick-plan" aria-label="任务安排"><option value="day">今天做</option><option value="week">本周做</option><option value="later">以后做</option></select>
+                  <button id="todo-quick-add" type="button">添加</button>
+                  <button class="todo-deadline-trigger" id="todo-quick-deadline" type="button" aria-label="选择截止时间"><span>截止</span></button>
                 </div>
+                <p id="todo-period-summary" class="todo-period-summary" role="status"></p>
                 <div class="todo-view-head">
                   <strong id="todo-view-title">今天</strong>
                   <span id="todo-view-sub"></span>
+                  <div class="todo-review-actions"><button id="home-review-day" type="button">今日复盘</button><button id="home-review-week" type="button">本周复盘</button></div>
+                  <select id="todo-status-filter" aria-label="筛选处理状态"><option value="all">全部状态</option><option value="active">待处理</option><option value="waiting">等待反馈</option><option value="followup">持续跟进</option></select>
                   <button class="bulk-delete todo-bulk-delete" id="todo-bulk-delete" type="button" hidden>删除</button>
                 </div>
                 <ul class="todo-list" id="todo-list"></ul>
                 <div class="todo-empty" id="todo-empty" hidden>
                   <strong id="todo-empty-title">今天没有待办</strong>
-                  <span id="todo-empty-hint">用上方输入框随手记一件，支持「明天交稿」这类写法</span>
+                  <span id="todo-empty-hint">写下要做的事，点击添加。临时新增任务也用同一个入口。</span>
                 </div>
               </div>
             </div>
@@ -277,19 +286,17 @@
                     <span class="tile-label">笔记库</span>
                     <strong id="notes-count">0 篇</strong>
                   </div>
-                  <label class="notes-search-wrap">
+                  <button id="notes-new" class="notes-new" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>新建笔记</button>
+                </div>
+                <label class="notes-search-wrap">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>
                     <input id="notes-search" type="search" placeholder="搜索笔记" aria-label="搜索笔记" autocomplete="off" />
-                  </label>
-                </div>
+                </label>
                 <div class="notes-list" id="notes-list"></div>
               </aside>
               <section class="notes-detail tile" id="notes-detail">
-                <div class="notes-detail-empty">
-                  <span class="notes-empty-mark" aria-hidden="true">✎</span>
-                  <strong>还没有保存的笔记</strong>
-                  <p>在首页的「随笔记」中写下内容，点击保存后会出现在这里。</p>
-                </div>
+                <header class="notes-detail-head"><div><input class="notes-detail-title" type="text" placeholder="标题（选填）" aria-label="笔记标题，可直接修改" maxlength="80"/><span>正在读取笔记…</span></div></header>
+                <textarea id="notes-editor" class="notes-editor" placeholder="在这里直接写笔记、想法或工作记录…" aria-label="笔记正文"></textarea>
               </section>
             </div>
           </section>
@@ -387,13 +394,22 @@
                   <p>密钥由系统安全存储加密，仅在你主动查看或复制时解密。</p>
                 </section>
 
-                <section class="tile settings-card"><div class="settings-card-heading"><div><span class="tile-label">本地翻译</span><strong>模型与快捷键</strong></div></div>
- <div class="translation-setup" id="translation-setup"><p>首次联网下载约 610 MB 模型，建议预留 1 GB 空间。此后离线翻译，空闲一分钟释放内存。</p><button id="translation-install" type="button">下载模型</button><button id="translation-import" type="button">导入本地模型</button></div>
- <p id="translation-install-status" role="status"></p><p>快捷键读取剪贴板并直接在首页翻译；短句识别不准时可手动选择语言。</p><button id="translation-shortcut" type="button">设置快捷键</button><button id="translation-shortcut-clear" type="button">清除快捷键</button></section>
+                <section class="tile settings-card settings-translation-card">
+                  <div class="settings-card-heading"><div><span class="tile-label">本地翻译</span><strong>模型与快捷键</strong></div></div>
+                  <div class="translation-setup" id="translation-setup">
+                    <p>首次联网下载约 610 MB 模型，建议预留 1 GB 空间。此后离线翻译，空闲一分钟释放内存。</p>
+                    <div class="settings-actions"><button class="settings-primary" id="translation-install" type="button">下载模型</button><button id="translation-import" type="button">导入本地模型</button></div>
+                  </div>
+                  <p id="translation-install-status" role="status"></p>
+                  <div class="settings-option">
+                    <p>快捷键读取剪贴板并直接在首页翻译；短句识别不准时可手动选择语言。</p>
+                    <div class="settings-actions"><button id="translation-shortcut" type="button">设置快捷键</button><button id="translation-shortcut-clear" type="button">清除快捷键</button></div>
+                  </div>
+                </section>
                <!-- 常用指令 -->
               <section class="tile settings-card home-commands" >
-                <div class="tile-head">
-                  <span class="tile-label">常用指令</span>
+                <div class="settings-card-heading">
+                  <strong>常用指令</strong>
                   <button class="bulk-delete" id="command-bulk-delete" type="button" hidden>删除</button>
                 </div>
                 <input class="command-add" id="command-add" type="text" placeholder="输入指令，回车保存…" maxlength="500" autocomplete="off" spellcheck="false" />
@@ -408,7 +424,7 @@
                     <label><span><b>待办</b><small>四象限任务</small></span><input type="checkbox" data-settings-feature="todo" aria-label="显示待办" /><i aria-hidden="true"></i></label>
                     <label><span><b>笔记</b><small>随笔与资料库</small></span><input type="checkbox" data-settings-feature="notes" aria-label="显示笔记" /><i aria-hidden="true"></i></label>
                     <label><span><b>链接</b><small>收藏与分组</small></span><input type="checkbox" data-settings-feature="links" aria-label="显示链接" /><i aria-hidden="true"></i></label>
-                    <label><span><b>录音</b><small>录音与转写</small></span><input type="checkbox" data-settings-feature="recordings" aria-label="显示录音" /><i aria-hidden="true"></i></label>
+                    <label><span><b>录音资料库</b><small>在更多中显示录音与转写页面</small></span><input type="checkbox" data-settings-feature="recordings" aria-label="显示录音资料库" /><i aria-hidden="true"></i></label>
                     <label><span><b>本机密钥</b><small>系统安全存储</small></span><input type="checkbox" data-settings-feature="credentials" aria-label="显示本机密钥" /><i aria-hidden="true"></i></label>
                     <label><span><b>剪贴板</b><small>显示入口，采集单独控制</small></span><input type="checkbox" data-settings-feature="clip" aria-label="显示剪贴板" /><i aria-hidden="true"></i></label>
                   </div>
@@ -421,9 +437,9 @@
                   </div>
                   <div class="settings-home-module-grid" id="settings-home-module-list">
                     <label><span><b>快速启动</b><small>常用软件一键打开</small></span><input type="checkbox" data-settings-home-module="launcher" aria-label="显示快速启动" /><i aria-hidden="true"></i></label>
-                    <label><span><b>快速录音</b><small data-home-module-setting-note="recorder">录音与转写</small></span><input type="checkbox" data-settings-home-module="recorder" aria-label="显示快速录音" /><i aria-hidden="true"></i></label>
                     <label><span><b>当前窗口</b><small>窗口快速切换</small></span><input type="checkbox" data-settings-home-module="windows" aria-label="显示当前窗口" /><i aria-hidden="true"></i></label>
-                    <label><span><b>随笔记</b><small>首页快速记录</small></span><input type="checkbox" data-settings-home-module="note" aria-label="显示随笔记" /><i aria-hidden="true"></i></label>
+                    <label><span><b>今日待办</b><small>事项清单与完成进度</small></span><input type="checkbox" data-settings-home-module="tasks" aria-label="显示今日待办" /><i aria-hidden="true"></i></label>
+                    <label><span><b>随手笔记</b><small>直接写，自动保存</small></span><input type="checkbox" data-settings-home-module="note" aria-label="显示随手笔记" /><i aria-hidden="true"></i></label>
                     <label><span><b>快捷翻译</b><small>剪贴板直接译中文</small></span><input type="checkbox" data-settings-home-module="translation" aria-label="显示快捷翻译" /><i aria-hidden="true"></i></label>
                   </div>
                 </section>
@@ -436,7 +452,11 @@
                   </div>
                   <div class="settings-device-row">
                     <div><span>唤出快捷键</span><strong id="settings-shortcut-value">Control+Alt+S</strong></div>
-                    <button id="settings-shortcut-change" type="button">重新设置</button>
+                    <span class="settings-device-actions"><button id="settings-shortcut-change" type="button">重新设置</button></span>
+                  </div>
+                  <div class="settings-device-row">
+                    <div><span>文字处理快捷键 · 任意应用可用</span><strong id="settings-capture-shortcut-value">Control+Alt+Q</strong><small id="settings-capture-shortcut-status">复制文字后呼出小窗：翻译、笔记、待办</small></div>
+                    <span class="settings-device-actions"><button id="settings-capture-shortcut-change" type="button">重新设置</button><button id="settings-capture-shortcut-clear" type="button">清除</button></span>
                   </div>
                   <label class="settings-device-row settings-default-tab-row">
                     <div><span>默认展开页</span><strong>每次唤出面板时显示</strong></div>
@@ -502,6 +522,7 @@
         </div>
         <div class="todo-date-popover" id="todo-date-popover" hidden>
           <section class="todo-editor-card" role="group" aria-label="截止日期与时间">
+            <p id="todo-editor-purpose" class="todo-editor-purpose">最晚什么时候完成</p>
             <header class="todo-calendar-head">
               <button id="todo-calendar-previous" type="button" aria-label="上个月">‹</button>
               <span id="todo-editor-month"></span>
@@ -578,10 +599,13 @@
     </div>
     <script src="../platform.js"></script>
     <script src="domain.js"></script>
+    <script src="workflow.js"></script>
     <script src="effects.js"></script>
     <script src="app.js"></script>
     <script src="workspace.js"></script>
     <script src="translation.js"></script>
+    <script src="workday.js"></script>
+    <script src="capture.js"></script>
     <script src="icon-motion.js"></script>
   </body>
 </html>

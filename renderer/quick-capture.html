@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'" />
+  <title>Slate · 处理剪贴板</title>
+  <link rel="stylesheet" href="brand.css" />
+  <link rel="stylesheet" href="quick-capture.css" />
+  <script defer src="quick-capture.js"></script>
+</head>
+<body>
+  <header class="window-bar">
+    <div class="window-title"><span class="brand">SLATE</span><h1>处理剪贴板</h1></div>
+    <button id="quick-close" class="icon-button" type="button" title="关闭（Esc）" aria-label="关闭窗口"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg></button>
+  </header>
+  <main>
+    <div class="source-heading"><label for="quick-text">原文 <span id="quick-count"></span></label><button id="quick-reread" class="text-button" type="button">重新读取剪贴板</button></div>
+    <textarea id="quick-text" spellcheck="false" placeholder="先复制一段文字，或直接在这里输入…" disabled></textarea>
+    <div class="actions" aria-label="处理文字">
+      <button id="quick-translate" class="primary" type="button">译为中文</button>
+      <button id="quick-note" type="button">存笔记</button>
+      <button id="quick-todo" type="button">转待办</button>
+      <button id="quick-cancel" class="text-button" type="button" hidden>取消翻译</button>
+    </div>
+    <section id="quick-result-section" class="result" hidden>
+      <div class="source-heading"><label for="quick-result">中文译文</label><button id="quick-copy" class="text-button" type="button">复制译文</button></div>
+      <textarea id="quick-result" readonly aria-label="中文译文"></textarea>
+    </section>
+    <div class="feedback-row"><p id="quick-feedback" role="status" aria-live="polite">正在读取剪贴板…</p><button id="quick-setup" class="text-button" type="button" hidden>准备离线翻译 ↗</button></div>
+  </main>
+  <footer><span>复制后按 <kbd id="quick-shortcut">Ctrl+Alt+Q</kbd> 即可呼出</span><span>Esc 关闭</span></footer>
+</body>
+</html>

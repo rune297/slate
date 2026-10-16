@@ -8,23 +8,32 @@
     shortcutListener=null;
   }
   function status(text) { el('status').textContent=text; el('install-status').textContent=text; }
+  function showPreparation() {
+    if (el('prepare')) el('prepare').hidden=installed;
+  }
   function lock(value) {
     busy=value;
     for (const id of ['run','install','import','paste']) el(id).disabled=value;
     el('source').disabled=value;
     el('input').readOnly=value;
+    el('release').hidden=!value;
+    el('release').textContent='取消';
   }
   async function refresh() {
     if (!api?.translationStatus) return;
     const state=await api.translationStatus(); installed=state.installed;
     el('setup').hidden=installed;
+    showPreparation();
     el('shortcut').textContent=state.shortcut || '设置快捷键';
+    if (!installed && !busy) status('首次需准备离线模型，此后文字仅在本机翻译');
+    return state;
   }
   async function run() {
     if (busy) return;
-    if (!installed) { status('请在设置中下载或导入模型'); await setActiveTab('settings'); return; }
+    if (!installed) { showPreparation(); status('原文已保留，点击「准备离线翻译」下载或导入模型'); return; }
     const text=el('input').value.trim();
     if (!text) return status('请先输入或读取剪贴板文字');
+    if (text.length>6000) return status('一次最多翻译 6000 字，请缩短原文后重试');
     const current=++generation; lock(true); el('output').value=''; el('copy').disabled=true;
     status('正在本地加载模型并翻译，首次加载可能较慢…');
     try {
@@ -56,8 +65,15 @@
     finally { if(current===generation) lock(false); }
   };
   el('import').onclick=async()=> { lock(true); try { const result=await api.importTranslation(); if(result.cancelled) return; if(!result.ok) throw new Error(result.error); await refresh(); status('本地模型已准备好'); } catch(error) { status(error.message); } finally {lock(false);} };
-  refresh().catch(()=>status('无法读取模型状态'));
-  el('release').onclick=async()=> { ++generation; await api.releaseTranslation(); lock(false); status('已停止任务并释放模型内存'); };
+  lock(false);
+  refresh().catch(()=>status('无法读取模型状态，请稍后重试'));
+  if (el('prepare')) el('prepare').onclick=async()=> { await setActiveTab('settings'); el('setup').scrollIntoView({block:'nearest'}); el('install').focus({preventScroll:true}); };
+  el('release').onclick=async()=> {
+    ++generation;
+    try { await api.releaseTranslation(); status('已取消，原文保留，可重新翻译'); }
+    catch(error) { status(`取消失败：${error.message}`); }
+    finally { lock(false); }
+  };
   el('copy').onclick=async()=> { const result=await api.writeClipboard({type:'text',text:el('output').value}); status(result ? '已复制译文' : '复制失败，请重试'); };
   el('shortcut').onclick=()=> {
     stopShortcutRecording();
@@ -74,6 +90,39 @@
     shortcutListener=listen; document.addEventListener('keydown',listen,true);
   };
   el('shortcut-clear').onclick=async()=> { await api.setTranslationShortcut(''); await refresh(); status('已清除翻译快捷键'); };
+  window.SlateTranslation={
+    async stage(value) {
+      const state = await refresh();
+      if (busy || state?.busy) return { ok: false, error: '已有翻译任务正在运行，原文仍在小窗，请稍后重试。' };
+      if (el('input').value.trim() && el('input').value !== value) return { ok: false, error: '首页已有未处理的翻译原文，请先处理或清空；当前文字仍在小窗。' };
+      el('input').value = value;
+      el('output').value = '';
+      el('copy').disabled = true;
+      status('小窗原文已保留，准备模型后可返回首页翻译');
+      return { ok: true };
+    },
+    async capture(value) {
+      if (busy) { status('正在翻译，请等待完成或取消后再处理其他文字'); return false; }
+      const text=typeof value==='string' ? value : '';
+      if (!text.trim()) { status('请先输入要翻译的文字'); return false; }
+      if (text.length>6000) { status('一次最多翻译 6000 字，请缩短原文后重试'); return false; }
+      try {
+        await refresh();
+        if (busy) { status('正在翻译，请等待完成或取消后再处理其他文字'); return false; }
+        window.SlateHome?.setModuleVisible('translation',true);
+        await setActiveTab('home');
+        if (!isExpanded) await setMode(true);
+        if (busy) { status('正在翻译，请等待完成或取消后再处理其他文字'); return false; }
+        el('input').value=text;
+        el('output').value='';
+        el('copy').disabled=true;
+        el('input').focus({preventScroll:true});
+        if (installed) void run();
+        else { showPreparation(); status('原文已保留，点击「准备离线翻译」下载或导入模型'); }
+        return true;
+      } catch(error) { status(`无法开始翻译：${error.message}，原文未处理`); return false; }
+    }
+  };
   api?.onOpenTranslation?.(async()=> { window.SlateHome?.setModuleVisible('translation',true); await setActiveTab('home'); if(!isExpanded) await setMode(true); await refresh(); await paste(true); });
   api?.onTranslationEvent?.(event=> {
     if(!busy) return;

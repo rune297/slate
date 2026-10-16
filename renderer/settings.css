@@ -1,0 +1,167 @@
+/* Settings owns its component system. Theme colors come from brand.css and
+   styles.css; no browser-default buttons or module-specific font sizes. */
+#tab-settings { min-height: 0; }
+.settings-page {
+  --settings-title-size: 16px;
+  --settings-body-size: 12px;
+  --settings-help-size: 11px;
+  --settings-control-height: 32px;
+  --settings-control-radius: 9px;
+  --settings-action-width: 176px;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-3);
+  font: var(--settings-body-size)/1.5 var(--font);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb-hover) transparent;
+}
+.settings-column {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  overflow-y: auto;
+  padding: 1px 3px 4px 1px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb-hover) transparent;
+}
+.settings-card {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-1);
+}
+.settings-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.settings-card-heading > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.settings-card-heading strong { color: var(--text-1); font-size: var(--settings-title-size); line-height: 1.4; font-weight: 620; }
+.settings-card-heading .tile-label { color: var(--text-3); font-size: var(--settings-help-size); line-height: 1.5; }
+.settings-card p, .settings-card small { margin: 0; color: var(--text-3); font: var(--settings-help-size)/1.6 var(--font); overflow-wrap: anywhere; }
+.settings-card-heading > small { max-width: 48%; text-align: right; }
+.settings-actions, .settings-backup-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.settings-option { display: flex; flex-direction: column; gap: 10px; }
+.settings-status-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.settings-status-list > div { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--settings-control-radius); background: var(--hover-bg); }
+.settings-status-list span { min-width: 0; color: var(--text-2); font-size: var(--settings-body-size); overflow-wrap: anywhere; }
+.settings-status-list small { flex: 0 0 auto; }
+.settings-status-list small[data-state='saved'] { color: var(--status-ok); }
+.settings-status-list small[data-state='warning'], #settings-home-module-status[data-state='warning'] { color: var(--status-warn); }
+
+#tab-settings button:where(:not(.command-text, .icon-button)) {
+  min-width: 76px;
+  min-height: var(--settings-control-height);
+  height: var(--settings-control-height);
+  max-width: 100%;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  appearance: none;
+  border: 1px solid var(--border-soft-strong);
+  border-radius: var(--settings-control-radius);
+  background: var(--hover-bg);
+  color: var(--text-2);
+  font: 500 var(--settings-body-size)/1 var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--d-fast) var(--ease), color var(--d-fast) var(--ease);
+}
+#tab-settings button:where(:not(.command-text, .icon-button)):hover:not(:disabled) { background: var(--hover-bg-strong); color: var(--text-1); }
+#tab-settings button:where(:not(.command-text, .icon-button)):active:not(:disabled) { background: var(--surface-3); }
+#tab-settings .settings-primary { background: var(--invert-bg); color: var(--invert-text); border-color: transparent; }
+#tab-settings .settings-primary:hover:not(:disabled) { background: var(--invert-bg); color: var(--invert-text); opacity: .9; }
+#tab-settings button:disabled { opacity: .45; cursor: default; }
+#tab-settings .bulk-delete { color: var(--status-danger); }
+#tab-settings .bulk-delete:hover:not(:disabled) { color: var(--status-danger); }
+#tab-settings button:focus-visible, #tab-settings select:focus-visible, #tab-settings input:where(:not([type='checkbox'])):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+#tab-settings input:where(:not([type='checkbox'])), #tab-settings select {
+  min-width: 0;
+  height: var(--settings-control-height);
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--border-soft-strong);
+  border-radius: var(--settings-control-radius);
+  background: var(--hover-bg);
+  color: var(--text-1);
+  font: var(--settings-body-size)/1.5 var(--font);
+  box-shadow: none;
+}
+#tab-settings input::placeholder { color: var(--text-3); opacity: 1; }
+#tab-settings select { cursor: pointer; color-scheme: inherit; }
+#tab-settings select:hover { background: var(--hover-bg-strong); }
+#tab-settings select option { background: var(--select-popup-bg); color: var(--text-1); }
+#tab-settings .translation-setup { display: flex; flex-direction: column; gap: 12px; padding: 12px; background: var(--hover-bg); border-radius: var(--settings-control-radius); }
+#translation-install-status:empty { display: none; }
+
+.settings-device-card { gap: 0; }
+.settings-device-card > .settings-card-heading { margin-bottom: 8px; }
+.settings-device-row {
+  min-width: 0;
+  min-height: 72px;
+  padding: 12px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--settings-action-width);
+  gap: 16px;
+  align-items: center;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.settings-device-row > div:first-child { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.settings-device-row > div > span, .settings-ignored-apps > span { color: var(--text-1); font-size: var(--settings-body-size); line-height: 1.5; }
+.settings-device-row strong { min-width: 0; color: var(--text-2); font: 500 var(--settings-body-size)/1.5 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-device-row small { color: var(--text-3); }
+.settings-device-row em { color: inherit; font-style: normal; }
+.settings-device-actions { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+#tab-settings .settings-device-actions > button { min-width: 84px; padding: 0 10px; }
+.settings-device-row > select { width: 100%; }
+.settings-default-tab-row, .settings-appearance-row, .settings-auto-launch-row { cursor: pointer; }
+.settings-auto-launch-row { position: relative; border-bottom: 0; }
+.settings-auto-launch-row > i { justify-self: end; }
+.settings-inline-note { min-height: 18px; padding-top: 8px; color: var(--status-ok) !important; }
+.settings-inline-note:empty { display: none; }
+.settings-inline-note.error { color: var(--status-danger) !important; }
+.settings-ignored-apps { display: flex; flex-direction: column; gap: 8px; }
+.settings-ignored-apps input { width: 100%; }
+.settings-wide-button { align-self: flex-start; }
+
+.settings-feature-grid, .settings-home-module-grid { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.settings-feature-grid label, .settings-home-module-grid label { min-width: 0; min-height: 64px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: var(--settings-control-radius); background: var(--hover-bg); cursor: pointer; }
+.settings-feature-grid label:hover, .settings-home-module-grid label:hover { background: var(--hover-bg-strong); }
+.settings-home-module-grid label:has(input:disabled) { cursor: default; opacity: .6; }
+.settings-feature-grid label > span, .settings-home-module-grid label > span { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.settings-feature-grid b, .settings-home-module-grid b { color: var(--text-2); font-size: var(--settings-body-size); font-weight: 550; }
+.settings-compact-toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: var(--settings-body-size); cursor: pointer; }
+.settings-feature-grid input, .settings-home-module-grid input, .settings-auto-launch-row input, .settings-compact-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.settings-feature-grid i, .settings-home-module-grid i, .settings-auto-launch-row > i, .settings-compact-toggle i { position: relative; flex: 0 0 32px; width: 32px; height: 18px; border-radius: var(--r-pill); background: var(--hover-bg-strong); box-shadow: inset 0 0 0 1px var(--border-soft-strong); }
+.settings-feature-grid i::after, .settings-home-module-grid i::after, .settings-auto-launch-row > i::after, .settings-compact-toggle i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--text-4); transition: transform var(--d-fast) var(--ease), background var(--d-fast) var(--ease); }
+.settings-feature-grid input:checked + i, .settings-home-module-grid input:checked + i, .settings-auto-launch-row input:checked + i, .settings-compact-toggle input:checked + i { background: var(--toggle-on); }
+.settings-feature-grid input:checked + i::after, .settings-home-module-grid input:checked + i::after, .settings-auto-launch-row input:checked + i::after, .settings-compact-toggle input:checked + i::after { transform: translateX(14px); background: var(--toggle-knob); }
+.settings-feature-grid input:focus-visible + i, .settings-home-module-grid input:focus-visible + i, .settings-auto-launch-row input:focus-visible + i, .settings-compact-toggle input:focus-visible + i { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+#tab-settings .command-add { width: 100%; }
+#tab-settings .command-list { display: flex; flex-direction: column; gap: 8px; overflow: visible; }
+#tab-settings .command-empty { align-self: flex-start; background: transparent; border-style: dashed; color: var(--text-3); }
+#tab-settings .command-item { min-height: 40px; padding: 3px 4px 3px 12px; border-radius: var(--settings-control-radius); }
+#tab-settings .command-text, #tab-settings .command-edit { font-size: var(--settings-body-size); }
+#tab-settings .command-actions .icon-button { flex: 0 0 32px; width: 32px; height: 32px; border-radius: var(--settings-control-radius); }
+
+@media (max-width: 1040px) {
+  .settings-page { display: flex; flex-direction: column; overflow-y: auto; }
+  .settings-column { flex: 0 0 auto; min-height: auto; overflow: visible; padding-right: 3px; }
+}
+@media (max-width: 560px) {
+  .settings-card { padding: 16px; }
+  .settings-device-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .settings-device-row > select { width: min(100%, var(--settings-action-width)); }
+  .settings-auto-launch-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .settings-status-list, .settings-feature-grid, .settings-home-module-grid { grid-template-columns: 1fr; }
+}

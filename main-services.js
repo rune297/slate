@@ -220,6 +220,18 @@ function todoReminderState(todo, now = Date.now(), leadMs = 60 * 60 * 1000) {
   return { state: 'scheduled', delayMs: triggerAt - current };
 }
 
+function todoFollowupReminderState(todo, now = Date.now()) {
+  const followupAt = Date.parse(String(todo?.followupAt || ''));
+  const current = Number(now);
+  // A follow-up remains actionable after its appointed time. Timers can wake
+  // slightly late or the app can reopen after a computer has been asleep.
+  return todoReminderState({
+    ...todo,
+    deadline: todo?.followupAt,
+    remindedAt: todo?.followupRemindedAt,
+  }, Number.isFinite(followupAt) && current > followupAt ? followupAt : current, 0);
+}
+
 const MAX_NODE_TIMER_DELAY_MS = (2 ** 31) - 1;
 
 function todoReminderTimerDelay(delayMs) {
@@ -592,6 +604,7 @@ module.exports = {
   recordingExtension,
   normalizeWindowRows,
   todoReminderState,
+  todoFollowupReminderState,
   todoReminderTimerDelay,
   taskNotificationIdentity,
   normalizeCredentialInput,

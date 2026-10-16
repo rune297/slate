@@ -467,7 +467,8 @@ async function main() {
             permissionRequests === 1
             && document.getElementById('record-start').disabled
             && document.getElementById('recording-new').disabled
-            && document.getElementById('home-live-transcript').textContent === '等待确认麦克风权限…'
+            && document.getElementById('quick-recorder').dataset.state === 'requesting'
+            && document.getElementById('home-recording-state').textContent === '等待录音权限'
           ), 'permission pending UI');
           const pending = {
             permissionRequests,
@@ -475,7 +476,7 @@ async function main() {
             recorderStarts,
             startDisabled: document.getElementById('record-start').disabled,
             newDisabled: document.getElementById('recording-new').disabled,
-            feedback: document.getElementById('home-live-transcript').textContent,
+            feedback: document.getElementById('quick-recorder').title,
             drafts: document.querySelectorAll('.recording-item.is-live').length,
           };
           releasePermission(true);
@@ -642,8 +643,8 @@ async function main() {
         const surface = document.getElementById('home-bento').getBoundingClientRect();
         const protectedSelectors = {
           launcher: ['.launcher-grid', '.launcher-add'],
-          recorder: ['.recorder-head', '.home-transcript:not([hidden])', '.recorder-controls'],
           windows: ['.tile-head', '.window-list'],
+          tasks: ['.task-home-head', '.home-work-planning'],
           note: ['.note-toolbar', '.note-body'],
           translation: ['.tile-head', '.translation-inline-controls', '.translation-editors'],
         };
@@ -754,16 +755,17 @@ async function main() {
       window.setSize(width, height);
       const matrix = await window.webContents.executeJavaScript(`
         (async () => {
-          const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
+          const ids = ['launcher', 'windows', 'tasks', 'note', 'translation'];
           ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
+          const availableIds = window.SlateHome.getVisibility().visibleIds;
           const results = [];
-          for (let count = 5; count >= 1; count -= 1) {
+          for (let count = availableIds.length; count >= 1; count -= 1) {
             document.getElementById('tab-button-home').click();
             await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             results.push(window.__measureHomepage());
             if (count > 1) {
               document.getElementById('tab-button-settings').click();
-              const input = document.querySelector('[data-settings-home-module="' + ids[5 - count] + '"]');
+              const input = document.querySelector('[data-settings-home-module="' + availableIds[availableIds.length - count] + '"]');
               input.checked = false;
               input.dispatchEvent(new Event('change', { bubbles: true }));
               await new Promise((resolve) => setTimeout(resolve, 20));
@@ -772,7 +774,7 @@ async function main() {
           return results;
         })()
       `);
-      matrix.forEach((measurement, index) => assertHomepageMeasurement(measurement, 5 - index));
+      matrix.forEach((measurement, index) => assertHomepageMeasurement(measurement, matrix.length - index));
 
       const finalWidgetGuard = await window.webContents.executeJavaScript(`
         (async () => {
@@ -797,9 +799,9 @@ async function main() {
 
     const transactionAudit = await window.webContents.executeJavaScript(`
       (() => {
-        const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
+        const ids = ['launcher', 'windows', 'tasks', 'note', 'translation'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
-        const first = window.SlateHome.setModuleVisible('recorder', false);
+        const first = window.SlateHome.setModuleVisible('tasks', false);
         const second = window.SlateHome.setModuleVisible('note', false);
         const rapidHidden = [...window.SlateHome.getVisibility().hiddenIds];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
@@ -830,11 +832,7 @@ async function main() {
           styles: [...document.querySelectorAll('[data-home-module]')].map((tile) => tile.getAttribute('style')).join('|'),
         };
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
-        const originalWorkspace = window.SlateWorkspace;
-        window.SlateWorkspace = { ...originalWorkspace, isRecordingActive: () => true };
-        document.dispatchEvent(new CustomEvent('slate:recording-state-changed', { detail: { active: true } }));
-        const recordingGuard = window.SlateHome.setModuleVisible('recorder', false);
-        window.SlateWorkspace = originalWorkspace;
+        const retiredRecorder = window.SlateHome.setModuleVisible('recorder', false);
         const durations = [];
         for (let index = 0; index < 100; index += 1) {
           const start = performance.now();
@@ -846,7 +844,7 @@ async function main() {
           first, second, rapidHidden, noop, eventCount,
           noOpStorageStable,
           rollback, rollbackStable: JSON.stringify(beforeRollback) === JSON.stringify(afterRollback),
-          recordingGuard,
+          retiredRecorder,
           p95: durations[Math.floor(durations.length * .95)],
           maximum: durations[durations.length - 1],
           animationCount: document.getElementById('home-bento').getAnimations().length,
@@ -855,20 +853,20 @@ async function main() {
     `);
     assert.equal(transactionAudit.first.ok, true);
     assert.equal(transactionAudit.second.ok, true);
-    assert.deepEqual(transactionAudit.rapidHidden, ['recorder', 'note']);
+    assert.deepEqual(transactionAudit.rapidHidden, ['tasks', 'note']);
     assert.equal(transactionAudit.noop.changed, false);
     assert.equal(transactionAudit.eventCount, 0);
     assert.equal(transactionAudit.noOpStorageStable, true);
     assert.equal(transactionAudit.rollback.error, 'layout_invalid');
     assert.equal(transactionAudit.rollbackStable, true);
-    assert.equal(transactionAudit.recordingGuard.error, 'recording_active');
+    assert.equal(transactionAudit.retiredRecorder.ok, false, 'retired recorder tile cannot be restored through the homepage API');
     assert.ok(transactionAudit.p95 < 16, `显隐事务 p95 ${transactionAudit.p95.toFixed(2)}ms 超过 16ms`);
     assert.ok(transactionAudit.maximum < 50, `显隐事务最长 ${transactionAudit.maximum.toFixed(2)}ms 超过 50ms`);
     assert.ok(transactionAudit.animationCount <= 1);
 
-    const persistenceAndRecorderAudit = await window.webContents.executeJavaScript(`
+    const persistenceAudit = await window.webContents.executeJavaScript(`
       (() => {
-        const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
+        const ids = ['launcher', 'windows', 'tasks', 'note', 'translation'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         const originalSetItem = Storage.prototype.setItem;
         const storedBefore = localStorage.getItem('slate-home-hidden-modules-v1');
@@ -880,7 +878,7 @@ async function main() {
         const degradedState = window.SlateHome.getVisibility();
         const degradedStatus = document.getElementById('settings-home-module-status').textContent;
         const degradedStorageStable = storedBefore === localStorage.getItem('slate-home-hidden-modules-v1');
-        ['launcher', 'recorder', 'windows', 'note'].forEach((id) => {
+        ['launcher', 'windows', 'tasks', 'note'].forEach((id) => {
           window.SlateHome.setModuleVisible(id, false);
         });
         const rejectedWhileDirty = window.SlateHome.setModuleVisible('translation', false);
@@ -890,19 +888,6 @@ async function main() {
         const recoveredStored = JSON.parse(localStorage.getItem('slate-home-hidden-modules-v1'));
 
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
-        const recorderHidden = window.SlateHome.setModuleVisible('recorder', false);
-        const originalWorkspace = window.SlateWorkspace;
-        window.SlateWorkspace = { ...originalWorkspace, isRecordingActive: () => true };
-        document.dispatchEvent(new CustomEvent('slate:recording-state-changed', { detail: { active: true } }));
-        const recorderSwitch = document.querySelector('[data-settings-home-module="recorder"]');
-        const hiddenSwitchEnabled = !recorderSwitch.disabled && !recorderSwitch.checked;
-        const recorderRestored = window.SlateHome.setModuleVisible('recorder', true);
-        document.dispatchEvent(new CustomEvent('slate:recording-state-changed', { detail: { active: true } }));
-        const visibleSwitchLocked = recorderSwitch.disabled && recorderSwitch.checked;
-        const recordingsActionAvailable = !document.getElementById('recording-new').disabled;
-        window.SlateWorkspace = originalWorkspace;
-        document.dispatchEvent(new CustomEvent('slate:recording-state-changed', { detail: { active: false } }));
-
         const noteInput = document.getElementById('home-note');
         noteInput.focus();
         const noteTile = noteInput.closest('[data-home-module]');
@@ -920,32 +905,22 @@ async function main() {
           recovered,
           recoveredPersisted: recoveredState.persisted,
           recoveredStored,
-          recorderHidden,
-          hiddenSwitchEnabled,
-          recorderRestored,
-          visibleSwitchLocked,
-          recordingsActionAvailable,
           focusReleased,
         };
       })()
     `);
-    assert.equal(persistenceAndRecorderAudit.degraded.ok, true);
-    assert.equal(persistenceAndRecorderAudit.degraded.persisted, false);
-    assert.equal(persistenceAndRecorderAudit.degradedPersisted, false);
-    assert.equal(persistenceAndRecorderAudit.degradedStorageStable, true);
-    assert.match(persistenceAndRecorderAudit.degradedStatus, /仅当前会话/);
-    assert.equal(persistenceAndRecorderAudit.rejectedWhileDirty.ok, false);
-    assert.equal(persistenceAndRecorderAudit.rejectedWhileDirty.persisted, false);
-    assert.equal(persistenceAndRecorderAudit.recovered.ok, true);
-    assert.equal(persistenceAndRecorderAudit.recovered.persisted, true);
-    assert.equal(persistenceAndRecorderAudit.recoveredPersisted, true);
-    assert.ok(Array.isArray(persistenceAndRecorderAudit.recoveredStored));
-    assert.equal(persistenceAndRecorderAudit.recorderHidden.ok, true);
-    assert.equal(persistenceAndRecorderAudit.hiddenSwitchEnabled, true);
-    assert.equal(persistenceAndRecorderAudit.recorderRestored.ok, true);
-    assert.equal(persistenceAndRecorderAudit.visibleSwitchLocked, true);
-    assert.equal(persistenceAndRecorderAudit.recordingsActionAvailable, true);
-    assert.equal(persistenceAndRecorderAudit.focusReleased, true);
+    assert.equal(persistenceAudit.degraded.ok, true);
+    assert.equal(persistenceAudit.degraded.persisted, false);
+    assert.equal(persistenceAudit.degradedPersisted, false);
+    assert.equal(persistenceAudit.degradedStorageStable, true);
+    assert.match(persistenceAudit.degradedStatus, /仅当前会话/);
+    assert.equal(persistenceAudit.rejectedWhileDirty.ok, false);
+    assert.equal(persistenceAudit.rejectedWhileDirty.persisted, false);
+    assert.equal(persistenceAudit.recovered.ok, true);
+    assert.equal(persistenceAudit.recovered.persisted, true);
+    assert.equal(persistenceAudit.recoveredPersisted, true);
+    assert.ok(Array.isArray(persistenceAudit.recoveredStored));
+    assert.equal(persistenceAudit.focusReleased, true);
 
     await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
       features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
@@ -995,7 +970,7 @@ async function main() {
 
     const lifecycleAudit = await window.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
+        const ids = ['launcher', 'windows', 'tasks', 'note', 'translation'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         document.getElementById('tab-button-home').click();
         document.getElementById('app').classList.remove('collapsed', 'closing', 'opening');
@@ -1054,7 +1029,7 @@ async function main() {
 
     const autoLayoutMotionAudit = await window.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['launcher', 'recorder', 'windows', 'note', 'translation'];
+        const ids = ['launcher', 'windows', 'tasks', 'note', 'translation'];
         ids.forEach((id) => window.SlateHome.setModuleVisible(id, true));
         document.getElementById('tab-button-home').click();
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -1208,114 +1183,50 @@ async function main() {
     assert.deepEqual(launcherAudit.afterDuplicate, { itemCount: 1, toast: 'Alpha 已经在快速启动里' }, '重复添加应被拦截且不产生重复项');
     assert.deepEqual(launcherAudit.afterRemove, { itemCount: 0, hintVisible: true, toast: '已移除 Alpha' }, '移除后应回到空态并给出反馈');
 
-    // 速记的 Markdown 预览、格式工具栏与编辑/预览切换此前只有 JS 与 CSS，HTML 从未声明对应元素，
-    // 250 行解析器完全不可达。这里锁死三者已接线，并覆盖渲染结果、格式写入与录音波形画布。
+    // 首页的待办与随手笔记分别承担捕获任务和自由书写，不能再共享格式、预览或保存工具。
     const noteAudit = await window.webContents.executeJavaScript(`
       (async () => {
+        await setMode(true);
+        document.getElementById('tab-button-home').click();
+        window.SlateHome.setModuleVisible('tasks', true);
+        window.SlateHome.setModuleVisible('note', true);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const input = document.getElementById('home-note');
-        const preview = document.getElementById('home-note-preview');
-        const toolbar = document.getElementById('note-format-actions');
-        const editButton = document.getElementById('note-edit-btn');
-        const strands = document.getElementById('recording-strands');
-
-        // 这些钩子只存在于 JS/CSS，HTML 从未声明过；缺失时先给出明确结论，
-        // 否则后面 dereference 会抛 TypeError，看不出是哪一环断了。
-        const missingHooks = ['home-note-preview', 'note-format-actions', 'note-edit-btn', 'recording-strands']
+        const taskTile = document.querySelector('[data-home-module="tasks"]');
+        const noteTile = document.querySelector('[data-home-module="note"]');
+        const missingHooks = ['home-note', 'home-note-new', 'home-note-save-state', 'home-task-input']
           .filter((id) => !document.getElementById(id));
         if (missingHooks.length) return { missingHooks };
-        const waitFor = async (predicate, timeout = 2000) => {
-          const startedAt = Date.now();
-          while (!predicate() && Date.now() - startedAt < timeout) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-          return predicate();
-        };
-        const setValue = (value) => {
-          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-          setter.call(input, value);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-        };
-        const noteSnapshot = localStorage.getItem('slate-home-note');
-        const archiveSnapshot = localStorage.getItem('slate-note-active-archive-v1');
-
-        const formatNames = [...toolbar.querySelectorAll('[data-note-format]')]
-          .map((button) => button.dataset.noteFormat);
-        const editLabelWhileEditing = editButton.textContent;
-
-        setValue('# 标题\\n\\n**加粗** 与 [链接](https://example.com)\\n\\n- 项目一\\n- [ ] 待办');
-        await waitFor(() => preview.children.length > 0);
-        editButton.click();
-        await waitFor(() => !preview.hidden);
-        const heading = preview.querySelector('h1');
-        const strong = preview.querySelector('strong');
-        const link = preview.querySelector('[data-note-href]');
-        const inPreview = {
-          textareaHidden: input.hidden,
-          previewVisible: !preview.hidden,
-          toolbarHidden: toolbar.hidden,
-          editLabel: editButton.textContent,
-          heading: heading ? heading.textContent : null,
-          strong: strong ? strong.textContent : null,
-          linkHref: link ? link.dataset.noteHref : null,
-          listItems: preview.querySelectorAll('li').length,
-          taskBoxes: preview.querySelectorAll('.note-task-box').length,
-        };
-
-        editButton.click();
-        await waitFor(() => preview.hidden);
-        const backToEditing = {
-          textareaVisible: !input.hidden,
-          toolbarVisible: !toolbar.hidden,
-          editLabel: editButton.textContent,
-        };
-
-        setValue('hello');
         input.focus();
-        input.setSelectionRange(0, 5);
-        toolbar.querySelector('[data-note-format="bold"]').click();
-        const boldedText = input.value;
-
-        const strandsState = strands
-          ? {
-              exists: true,
-              parentId: strands.parentElement ? strands.parentElement.id : null,
-              display: getComputedStyle(strands).display,
-            }
-          : { exists: false };
-
-        setValue(noteSnapshot || '');
-        await new Promise((resolve) => setTimeout(resolve, 450));
-        if (noteSnapshot === null) localStorage.removeItem('slate-home-note');
-        if (archiveSnapshot === null) localStorage.removeItem('slate-note-active-archive-v1');
-
-        return { missingHooks, formatNames, editLabelWhileEditing, inPreview, backToEditing, boldedText, strandsState };
+        const readyToEdit = document.activeElement === input && !input.readOnly && !input.disabled
+          && !input.hidden && getComputedStyle(input).display !== 'none';
+        const visibleLegacyTools = ['home-note-preview', 'note-format-actions', 'note-edit-btn', 'home-note-tools', 'note-save-btn']
+          .filter((id) => { const el = document.getElementById(id); return el && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0; });
+        const independentRegions = taskTile.contains(document.getElementById('home-task-input'))
+          && !taskTile.contains(input) && noteTile.contains(input)
+          && !noteTile.contains(document.getElementById('home-task-add'));
+        window.SlateHome.setModuleVisible('note', false);
+        const taskStillAvailable = !taskTile.hidden && !document.getElementById('home-task-input').disabled;
+        window.SlateHome.setModuleVisible('note', true);
+        window.SlateHome.setModuleVisible('tasks', false);
+        input.focus();
+        const noteStillEditable = !noteTile.hidden && document.activeElement === input && !input.readOnly;
+        window.SlateHome.setModuleVisible('tasks', true);
+        return { missingHooks, readyToEdit, visibleLegacyTools, independentRegions, taskStillAvailable, noteStillEditable,
+          retiredRecordingTile: !!document.querySelector('[data-home-module="recorder"]'),
+          waveform: !!document.getElementById('recording-strands'),
+          topbarRecording: !!document.querySelector('.topbar #quick-recorder #record-start') };
       })()
     `);
-    assert.deepEqual(noteAudit.missingHooks, [], '速记预览层、格式工具栏、编辑切换与录音波形画布的 DOM 必须存在于首页');
-    assert.deepEqual(noteAudit.formatNames, [
-      'bold', 'italic', 'heading', 'bullet', 'ordered', 'task', 'quote', 'code', 'link',
-    ], '速记格式工具栏必须覆盖标题/粗斜体/列表/任务/引用/代码/链接');
-    assert.equal(noteAudit.editLabelWhileEditing, '完成', '编辑态下切换按钮应提示“完成”');
-    assert.deepEqual(noteAudit.inPreview, {
-      textareaHidden: true,
-      previewVisible: true,
-      toolbarHidden: true,
-      editLabel: '编辑',
-      heading: '标题',
-      strong: '加粗',
-      linkHref: 'https://example.com/',
-      listItems: 2,
-      taskBoxes: 1,
-    }, '预览应渲染标题、加粗、链接、列表与任务项，并让出编辑区');
-    assert.deepEqual(noteAudit.backToEditing, {
-      textareaVisible: true,
-      toolbarVisible: true,
-      editLabel: '完成',
-    }, '切回编辑应恢复文本域与格式工具栏');
-    assert.equal(noteAudit.boldedText, '**hello**', '格式按钮应在光标选区上写入 Markdown');
-    assert.equal(noteAudit.strandsState.exists, true, '#recording-strands 画布必须回到录音磁贴');
-    assert.equal(noteAudit.strandsState.parentId, 'home-recorder', '波形画布必须是录音磁贴的直接子元素');
-    assert.notEqual(noteAudit.strandsState.display, 'none', '波形画布不得再被 CSS 永久隐藏');
+    assert.deepEqual(noteAudit.missingHooks, [], '首页必须提供独立的任务捕获、直接编辑和自动保存反馈');
+    assert.equal(noteAudit.readyToEdit, true, '笔记无需进入编辑模式，点击文本域即可书写');
+    assert.deepEqual(noteAudit.visibleLegacyTools, [], '首页不得再显示格式、预览和手动保存按钮');
+    assert.equal(noteAudit.independentRegions, true, '任务与自由书写分别位于独立卡片');
+    assert.equal(noteAudit.taskStillAvailable, true, '关闭笔记组件不能关闭任务捕获');
+    assert.equal(noteAudit.noteStillEditable, true, '关闭待办组件不能阻止自由书写');
+    assert.equal(noteAudit.retiredRecordingTile, false, '快速录音不再占用首页卡片');
+    assert.equal(noteAudit.waveform, false, '顶部轻量录音不需要持续绘制波形画布');
+    assert.equal(noteAudit.topbarRecording, true, '录音入口应随顶栏在各页面可用');
 
     // 待办视角化重设计：自然语言日期解析与视图归属（今天/已排期/收件箱/已完成）
     const todoViewAudit = await window.webContents.executeJavaScript(`

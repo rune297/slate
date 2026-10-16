@@ -5,7 +5,7 @@ const os = require('node:os');
 const root = path.join(__dirname, '..');
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
-env.SLATE_NOTIFICATION_PORT = '43831';
+env.SLATE_NOTIFICATION_PORT ||= '43831';
 function run(executable, args) {
   console.log(`Checking ${args.join(' ')}`);
   const result = spawnSync(executable, args, { cwd: root, env, stdio: 'inherit', timeout: 180000 });
@@ -19,12 +19,12 @@ run(process.execPath, ['--test', ...fs.readdirSync(path.join(root, 'tests')).fil
 env.TODO_TEST_LOG = path.join(root, 'dist.noindex', 'windows-smoke', 'renderer-test.log');
 fs.mkdirSync(path.dirname(env.TODO_TEST_LOG), { recursive: true });
 fs.writeFileSync(env.TODO_TEST_LOG, '');
-for (const file of ['slate-focus', 'retained-workspace', 'startup', 'dismiss-outside']) {
+for (const file of ['slate-focus', 'retained-workspace', 'startup', 'dismiss-outside', 'workflow', 'newcomer', 'notes-compose', 'home-note-capture', 'topbar-recording', 'ux-actions', 'global-capture']) {
   const testProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'todo-renderer-test-'));
   env.TODO_TEST_USER_DATA = testProfile;
   run(require('electron'), [`tests/${file}.electron.js`]);
   fs.rmSync(testProfile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
-for (const file of ['main.js', 'main-services.js', 'platform.js', 'preload.js', 'renderer/domain.js', 'renderer/effects.js', 'renderer/app.js', 'renderer/workspace.js', 'renderer/icon-motion.js', 'renderer/notification.js', 'scripts/codex-notify.js', 'scripts/claude-notify.js', 'scripts/smoke-app.js']) {
+for (const file of ['main.js', 'main-services.js', 'platform.js', 'preload.js', 'quick-capture-preload.js', 'renderer/quick-capture.js', 'renderer/domain.js', 'renderer/workflow.js', 'renderer/workday.js', 'renderer/translation.js', 'renderer/capture.js', 'renderer/effects.js', 'renderer/app.js', 'renderer/workspace.js', 'renderer/icon-motion.js', 'renderer/notification.js', 'scripts/codex-notify.js', 'scripts/claude-notify.js', 'scripts/smoke-app.js']) {
   run(process.execPath, ['--check', file]);
 }

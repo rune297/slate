@@ -186,6 +186,9 @@ function loadData() {
     PRIORITIES.forEach((bucket) => {
       result[bucket] = raw ? normalizeTodoItems(JSON.parse(raw)[bucket]) : [];
     });
+    // Persist the one-time migration only when a task snapshot already exists.
+    // A fresh page must remain empty until portable-workspace recovery completes.
+    if (raw && JSON.stringify(result) !== raw) localStorage.setItem(STORAGE_KEY,JSON.stringify(result));
     return result;
   } catch (e) {
     const result = {};
@@ -201,13 +204,13 @@ function normalizeTodoItems(value) {
       if (typeof item === 'string') {
         const text = item.trim();
         return text
-          ? { id: generateId(), text, done: false, createdAt: Date.now() }
+          ? window.SlateWorkflow.normalizeTodo({ id: generateId(), text, done: false, createdAt: Date.now() })
           : null;
       }
       if (!item || typeof item !== 'object' || typeof item.text !== 'string') return null;
       const text = item.text.trim();
       if (!text) return null;
-      return {
+      return window.SlateWorkflow.normalizeTodo({
         id: typeof item.id === 'string' && item.id ? item.id : generateId(),
         text,
         done: item.done === true,
@@ -217,7 +220,19 @@ function normalizeTodoItems(value) {
           : '',
         remindedAt: Math.max(0, Number(item.remindedAt) || 0),
         pinnedToday: item.pinnedToday === true,
-      };
+        focusDate: item.focusDate,
+        focusOrder: item.focusOrder,
+        status: item.status,
+        followupAt: item.followupAt,
+        followupRemindedAt: item.followupRemindedAt,
+        completedAt: item.completedAt,
+        notes: item.notes,
+        estimateMinutes: item.estimateMinutes,
+        ...(item.planKind === undefined ? {} : {planKind:item.planKind}),
+        planDate: item.planDate,
+        planWeek: item.planWeek,
+        planAddedAt: item.planAddedAt,
+      });
     })
     .filter(Boolean);
 }
@@ -226,12 +241,14 @@ function saveData(data) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {
-    // ignore quota errors
+    return false;
   }
   if (window.slateAPI && typeof window.slateAPI.scheduleTodoReminders === 'function') {
     const reminders = PRIORITIES.flatMap((priority) => data[priority] || []);
     window.slateAPI.scheduleTodoReminders(reminders).catch(() => {});
   }
+  document.dispatchEvent(new CustomEvent('slate:tasks-changed'));
+  return true;
 }
 
 let data = loadData();
@@ -241,6 +258,8 @@ let todoSelectionAnchor = null;
 let editingTodo = null;
 let todoView = 'today';
 let todoTag = 'all';
+let todoStatusFilter = 'all';
+let expandedTodoId = '';
 
 function loadTodoCategoryNames() {
   try {
@@ -283,10 +302,12 @@ if (window.slateAPI && typeof window.slateAPI.onTodoReminder === 'function') {
     let changed = false;
     PRIORITIES.forEach((priority) => {
       const item = (data[priority] || []).find((todo) => (
-        todo.id === payload.id && String(todo.deadline || '') === String(payload.deadline || '')
+        todo.id === payload.id && (payload.kind === 'followup'
+          ? String(todo.followupAt || '') === String(payload.followupAt || '')
+          : String(todo.deadline || '') === String(payload.deadline || ''))
       ));
       if (!item) return;
-      item.remindedAt = Math.max(0, Number(payload.remindedAt) || Date.now());
+      item[payload.kind === 'followup' ? 'followupRemindedAt' : 'remindedAt'] = Math.max(0, Number(payload.remindedAt) || Date.now());
       changed = true;
     });
     if (changed) saveData(data);
@@ -331,23 +352,49 @@ function todoItemHtml(bucket, item) {
   const categoryChip = todoView === 'done'
     ? ''
     : `<button class="todo-cat-chip" type="button" data-action="cycle-cat" data-bucket="${bucket}" title="点击切换分类">${escapeHtml(categoryName)}</button>`;
-  const pinLabel = item.pinnedToday ? '退出今天' : '加入今天';
+  const focused = window.SlateWorkflow.isFocus(item);
+  const pinLabel = focused ? '取消今日重点' : '设为今日重点';
   const pinButton = item.done
     ? ''
-    : `<button class="todo-pin${item.pinnedToday ? ' pinned' : ''}" type="button" data-action="pin" aria-label="${pinLabel}：${safeText}" title="${pinLabel}：让这条待办出现在「今天」视图" aria-pressed="${item.pinnedToday === true}"><span>${item.pinnedToday ? '已在今天' : '加入今天'}</span></button>`;
+    : `<button class="todo-pin${focused ? ' pinned' : ''}" type="button" data-action="pin" aria-label="${pinLabel}：${safeText}" title="${pinLabel}" aria-pressed="${focused}"><span>${focused ? '今日重点' : '设为重点'}</span></button>`;
   const isEditing = editingTodo?.id === item.id;
   const contentHtml = isEditing
     ? `<div class="todo-inline-editor"><input class="todo-inline-name" value="${safeText}" maxlength="80" aria-label="修改待办名称" />${dueChip}<button class="todo-inline-deadline" type="button" data-action="edit-deadline">${deadline || '日期'}</button><button class="todo-inline-save" type="button" data-action="save-edit" aria-label="保存修改">✓</button></div>`
     : `<button class="todo-copy" type="button" data-action="edit" title="${safeText}" aria-label="修改：${safeText}"><span class="todo-text">${safeText}</span>${dueChip}${deadline ? `<time class="todo-ddl" datetime="${escapeHtml(item.deadline)}">${escapeHtml(deadline)}</time>` : ''}</button>`;
+  const statusNames = {active:'待处理', waiting:'等待反馈', followup:'持续跟进'};
+  const followupLabel = item.followupAt ? new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(item.followupAt)) : '';
+  const summary = [item.status !== 'active' ? statusNames[item.status] : '', item.estimateMinutes ? `${item.estimateMinutes} 分钟` : '', followupLabel ? `再次提醒 ${followupLabel}` : ''].filter(Boolean).join(' · ');
   return `
-    <li class="todo-item${doneClass}${selectedClass}" data-id="${safeId}" data-priority="${bucket}">
+    <li class="todo-item${doneClass}${selectedClass}${expandedTodoId === item.id ? ' details-open' : ''}" data-id="${safeId}" data-priority="${bucket}">
+      <div class="todo-item-main">
       <button class="checkbox" type="button" data-action="toggle" aria-label="${toggleLabel}" aria-pressed="${item.done}">${checkSvg()}</button>
       ${contentHtml}
       ${categoryChip}
       ${pinButton}
+      <button class="todo-details-toggle" type="button" data-action="details" aria-label="任务详情：${safeText}" aria-expanded="${expandedTodoId === item.id}">详情</button>
       <button class="delete" type="button" data-action="delete" aria-label="删除：${safeText}">×</button>
+      </div>
+      ${summary ? `<small class="todo-work-summary">${escapeHtml(summary)}</small>` : ''}
+      ${expandedTodoId === item.id ? todoWorkflowDetails(item) : ''}
     </li>
   `;
+}
+
+function todoWorkflowDetails(item) {
+  const localTime = item.followupAt ? new Date(new Date(item.followupAt).getTime() - new Date(item.followupAt).getTimezoneOffset()*60000).toISOString().slice(0,16) : '';
+  return `<div class="todo-work-details">
+    <div class="todo-work-fields"><label>打算什么时候做<select data-detail="plan">${[['day','指定一天'],['week','本周'],['later','以后再做']].map(([value,label])=>`<option value="${value}"${item.planKind===value?' selected':''}>${label}</option>`).join('')}</select><input type="date" data-detail="plan-date" aria-label="计划执行日期" value="${item.planDate || window.SlateWorkflow.dateKey()}"${item.planKind==='day'?'':' hidden'} /></label><label>处理状态<select data-detail="status">${[['active','待处理'],['waiting','等待反馈'],['followup','持续跟进']].map(([value,label])=>`<option value="${value}"${item.status===value?' selected':''}>${label}</option>`).join('')}</select></label>
+    <label>预计用时<select data-detail="estimate">${[0,30,45,60].map(value=>`<option value="${value}"${item.estimateMinutes===value?' selected':''}>${value?value+' 分钟':'不设置'}</option>`).join('')}</select></label>
+    <label>再次提醒<input type="datetime-local" data-detail="followup" value="${localTime}" /></label></div>
+    <label class="todo-work-note-label">下一步 / 等谁反馈 / 小步骤<textarea data-detail="notes" maxlength="6000" rows="3" placeholder="例如：等客户确认预算，周三再催；或写下 30–60 分钟的小步骤">${escapeHtml(item.notes || '')}</textarea></label>
+    <div class="todo-work-detail-actions"><span>再次提醒与任务截止时间分别保存</span><button type="button" data-action="save-details">保存详情</button></div>
+  </div>`;
+}
+
+function taskMatchesView(item, view, now = new Date()) {
+  if (view === 'done') return item.done === true;
+  if (item.done) return false;
+  return window.SlateWorkflow.isInPeriod(item,{today:'day',upcoming:'week',inbox:'later'}[view] || 'day',now);
 }
 
 function captureTodoPositions() {
@@ -380,10 +427,14 @@ function animateTodoOrder(previousPositions) {
   });
 }
 
-const TODO_VIEW_TITLES = { today: '今天', upcoming: '已排期', inbox: '收件箱', done: '已完成' };
+const TODO_VIEW_TITLES = { today: '今天', upcoming: '本周', inbox: '以后', done: '已完成' };
 
 function allTodos() {
   return PRIORITIES.flatMap((bucket) => (data[bucket] || []).map((item) => ({ ...item, bucket })));
+}
+
+function nextFocusOrder() {
+  return Math.max(-1,...window.SlateWorkflow.focusTasks(allTodos()).map(item=>item.focusOrder || 0)) + 1;
 }
 
 function findTodo(id) {
@@ -396,10 +447,11 @@ function findTodo(id) {
 
 function visibleTodos() {
   const now = new Date();
-  return window.SlateDomain.sortTodosForDisplay(allTodos().filter((item) => (
+  return window.SlateWorkflow.sortTasks(allTodos().filter((item) => (
     (todoTag === 'all' || item.bucket === todoTag)
-    && window.SlateDomain.todoBelongsToView(item, todoView, now)
-  )));
+    && (todoStatusFilter === 'all' || item.status === todoStatusFilter)
+    && taskMatchesView(item, todoView, now)
+  )), now);
 }
 
 function updateViewCounts() {
@@ -408,7 +460,7 @@ function updateViewCounts() {
   ['today', 'upcoming', 'inbox', 'done'].forEach((view) => {
     const el = document.querySelector(`[data-view-count="${view}"]`);
     if (!el) return;
-    const count = items.filter((item) => window.SlateDomain.todoBelongsToView(item, view, now)).length;
+    const count = items.filter((item) => taskMatchesView(item, view, now)).length;
     el.textContent = String(view === 'done' ? count : count);
   });
   PRIORITIES.forEach((bucket) => {
@@ -421,7 +473,19 @@ function updateViewCounts() {
 function renderList(priority, options = {}) {
   const list = document.getElementById('todo-list');
   if (!list) return;
+  // A background capture must not replace unfinished detail/name edits in the
+  // main window. Restore only form state; these drafts are not saved implicitly.
+  const drafts = options.preserveDrafts ? [...list.querySelectorAll('[data-detail], .todo-inline-name')].map(field => ({
+    id: field.closest('[data-id]').dataset.id,
+    key: field.dataset.detail || 'inline-name',
+    value: field.value,
+    hidden: field.hidden,
+    selectionStart: field.selectionStart,
+    selectionEnd: field.selectionEnd,
+    scrollTop: field.scrollTop,
+  })) : [];
   const items = visibleTodos();
+  if (expandedTodoId && !items.some(item=>item.id === expandedTodoId)) expandedTodoId = '';
   // 单条渲染异常不允许拖垮整个视图（否则切换视角时界面会卡在旧状态）
   list.innerHTML = items.map((item) => {
     try {
@@ -430,6 +494,15 @@ function renderList(priority, options = {}) {
       return `<li class="todo-item" data-id="${escapeHtml(item.id)}" data-priority="${escapeHtml(item.bucket)}"><button class="checkbox" type="button" data-action="toggle" aria-label="标记完成">${checkSvg()}</button><button class="todo-copy" type="button" data-action="edit"><span class="todo-text">${escapeHtml(item.text)}</span></button></li>`;
     }
   }).join('');
+  for (const draft of drafts) {
+    const row = list.querySelector(`[data-id="${CSS.escape(draft.id)}"]`);
+    const field = row?.querySelector(draft.key === 'inline-name' ? '.todo-inline-name' : `[data-detail="${CSS.escape(draft.key)}"]`);
+    if (!field) continue;
+    field.value = draft.value;
+    field.hidden = draft.hidden;
+    field.scrollTop = draft.scrollTop;
+    if (typeof draft.selectionStart === 'number') field.setSelectionRange(draft.selectionStart, draft.selectionEnd);
+  }
   updateViewCounts();
   updateTodoBulkButton();
   animateTodoOrder(options.previousPositions);
@@ -438,14 +511,14 @@ function renderList(priority, options = {}) {
     empty.hidden = items.length > 0;
     const titles = {
       today: '今天没有待办',
-      upcoming: '还没有已排期的事',
-      inbox: '收件箱是空的',
+      upcoming: '本周还没有安排任务',
+      inbox: '还没有以后要做的事',
       done: '还没有完成的记录',
     };
     const hints = {
-      today: '用上方输入框随手记一件，支持「明天交稿」这类写法',
-      upcoming: '添加待办时写上「下周三」这类日期就会出现在这里',
-      inbox: '用上方输入框随手记一件，稍后再安排时间',
+      today: '写下今天要做的事，点添加；临时任务也从这里加入',
+      upcoming: '本周打算做但还没确定哪天的任务，直接安排到本周',
+      inbox: '暂时不着急或还没确定日期的工作，先记在这里',
       done: '完成的待办会在这里留档',
     };
     const title = document.getElementById('todo-empty-title');
@@ -460,11 +533,19 @@ function renderList(priority, options = {}) {
     const tagName = todoTag === 'all' ? '全部分类' : (todoCategoryNames[todoTag] || todoTag);
     viewSub.textContent = `${tagName} · ${items.filter((item) => !item.done).length} 件未完成`;
   }
+  const summary = document.getElementById('todo-period-summary');
+  if(summary) {
+    const period={today:'day',upcoming:'week',inbox:'later'}[todoView];
+    const stats=period ? window.SlateWorkflow.periodStats(allTodos().filter(item=>todoTag==='all'||item.bucket===todoTag),period) : null;
+    summary.textContent=stats ? `当前安排：已完成 ${stats.completed} / ${stats.total} · 未完成 ${stats.pending} · 等待反馈 ${stats.waiting}${stats.followup?` · 持续跟进 ${stats.followup}`:''}${stats.overdue?` · 逾期 ${stats.overdue}`:''}${stats.added?` · 期间新增 ${stats.added}`:''}` : `共 ${allTodos().filter(item=>item.done).length} 件已完成任务`;
+    summary.title='按当前安排统计。新增任务会增加总数；移走任务会减少总数。';
+  }
   if (options.focusId) {
     requestAnimationFrame(() => list.querySelector(
       `.todo-item[data-id="${CSS.escape(options.focusId)}"] [data-action="${options.focusAction || 'toggle'}"]`
     )?.focus({ preventScroll: true }));
   }
+  document.dispatchEvent(new CustomEvent('slate:tasks-rendered'));
 }
 
 function updateTodoBulkButton() {
@@ -484,7 +565,10 @@ function renderAll() {
   renderList();
 }
 
-setInterval(() => renderList(), 60_000);
+setInterval(() => {
+  if (!editingTodo && !expandedTodoId) renderList();
+  else document.dispatchEvent(new CustomEvent('slate:tasks-rendered'));
+}, 60_000);
 
 // 渲染重建 innerHTML 后，给指定条目挂一次性动画类；动画结束即卸载，不污染后续渲染
 function flashItemClass(priority, id, cls) {
@@ -501,17 +585,25 @@ function flashCheckboxPop(priority, id) {
   box.addEventListener('animationend', () => box.classList.remove('pop'), { once: true });
 }
 
-function addTodo(bucket, text, deadline, pinnedToday = false) {
-  const item = window.SlateDomain.createTodo(text, deadline, generateId(), Date.now());
+function addTodo(bucket, text, deadline, pinnedToday = false, options = {}) {
+  let item = window.SlateDomain.createTodo(text, deadline, generateId(), Date.now());
   if (!item) return false;
-  if (pinnedToday) item.pinnedToday = true;
+  item = window.SlateWorkflow.normalizeTodo(item);
+  const kind=deadline ? 'day' : options.period || document.getElementById('todo-quick-plan')?.value || 'day';
+  item=window.SlateWorkflow.setPlan(item,kind,new Date(),deadline ? window.SlateWorkflow.dateKey(new Date(deadline)) : '');
+  if (pinnedToday) item = window.SlateWorkflow.setFocus(item,true,new Date(),nextFocusOrder());
+  if (typeof options.notes === 'string') item.notes = options.notes;
   const previousPositions = captureTodoPositions();
   data[bucket].push(item);
-  saveData(data);
-  renderList({ previousPositions });
+  if (!saveData(data)) {
+    data[bucket].pop();
+    renderList(undefined, { preserveDrafts: options.preserveDrafts });
+    return false;
+  }
+  renderList(undefined, { previousPositions, preserveDrafts: options.preserveDrafts });
   flashItemClass(bucket, item.id, 'enter');
   const added = document.querySelector(`.todo-item[data-id="${CSS.escape(item.id)}"]`);
-  if (added) {
+  if (added && !options.preserveDrafts) {
     requestAnimationFrame(() => {
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       added.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
@@ -537,8 +629,8 @@ function toggleTodo(id) {
   if (!found) return;
   const previousPositions = captureTodoPositions();
   const restoreFocus = document.activeElement?.closest('.todo-item')?.dataset.id === id;
-  found.item.done = !found.item.done;
-  const nowDone = found.item.done;
+  data[found.bucket][found.index] = window.SlateWorkflow.completeTodo(found.item,!found.item.done);
+  const nowDone = data[found.bucket][found.index].done;
   saveData(data);
   renderList({
     previousPositions,
@@ -913,6 +1005,17 @@ function positionIndicator() {
   tabIndicator.style.transform = `translateX(${btn.offsetLeft}px)`;
 }
 
+let indicatorResizeFrame = 0;
+function queueIndicatorPosition() {
+  cancelAnimationFrame(indicatorResizeFrame);
+  indicatorResizeFrame = requestAnimationFrame(positionIndicator);
+}
+window.addEventListener('resize', queueIndicatorPosition);
+if (typeof ResizeObserver === 'function' && tabsContainer) {
+  const observer = new ResizeObserver(queueIndicatorPosition);
+  observer.observe(tabsContainer);
+}
+
 function applyTabDom(name) {
   tabButtons.forEach((b) => {
     const selected = b.dataset.tab === name;
@@ -1093,12 +1196,12 @@ shortcutRecorder?.addEventListener('keydown', async (event) => {
     if (shortcutRecorderValue) shortcutRecorderValue.textContent = '单键仅支持空格';
     return;
   }
-  if (shortcutRecorderTarget === 'clip' && accelerator === 'Space') {
-    if (shortcutRecorderValue) shortcutRecorderValue.textContent = '剪贴板快捷键需要组合键';
+  if (shortcutRecorderTarget !== 'panel' && accelerator === 'Space') {
+    if (shortcutRecorderValue) shortcutRecorderValue.textContent = '请使用组合快捷键';
     return;
   }
   if (shortcutRecorderValue) shortcutRecorderValue.textContent = accelerator;
-  const setter = shortcutRecorderTarget === 'clip'
+  const setter = shortcutRecorderTarget === 'capture' ? window.slateAPI?.setCaptureShortcut : shortcutRecorderTarget === 'clip'
     ? window.slateAPI?.setClipShortcut
     : window.slateAPI?.setPanelShortcut;
   const result = await setter?.(accelerator).catch(() => ({ ok: false }));
@@ -1106,17 +1209,17 @@ shortcutRecorder?.addEventListener('keydown', async (event) => {
     if (shortcutRecorderValue) shortcutRecorderValue.textContent = result?.error === 'occupied' ? '该快捷键已被占用' : '无法使用该快捷键';
     return;
   }
-  showStatusToast(`${shortcutRecorderTarget === 'clip' ? '剪贴板' : '唤出'}快捷键已设为 ${accelerator}`);
+  showStatusToast(`${shortcutRecorderTarget === 'capture' ? '文字处理' : shortcutRecorderTarget === 'clip' ? '剪贴板' : '唤出'}快捷键已设为 ${accelerator}`);
   setTimeout(closeShortcutRecorder, 420);
 });
 
 shortcutRecorderCancel?.addEventListener('click', closeShortcutRecorder);
 function openShortcutRecorder(event) {
   if (!isExpanded) setMode(true);
-  shortcutRecorderTarget = event?.detail?.target === 'clip' ? 'clip' : 'panel';
+  shortcutRecorderTarget = ['clip', 'capture'].includes(event?.detail?.target) ? event.detail.target : 'panel';
   shortcutRecorderActive = true;
   shortcutRecorder.hidden = false;
-  if (shortcutRecorderTitle) shortcutRecorderTitle.textContent = shortcutRecorderTarget === 'clip'
+  if (shortcutRecorderTitle) shortcutRecorderTitle.textContent = shortcutRecorderTarget === 'capture' ? '按下新的文字处理快捷键' : shortcutRecorderTarget === 'clip'
     ? '按下新的剪贴板快捷键'
     : '按下新的唤出快捷键';
   shortcutRecorderValue.textContent = '等待输入…';
@@ -1264,11 +1367,14 @@ function openGlobalSearch() {
   if (!globalSearch) return;
   globalSearch.hidden = false;
   renderGlobalSearch(globalSearchInput?.value || '');
-  requestAnimationFrame(() => globalSearchInput?.focus({ preventScroll: true }));
+  requestAnimationFrame(() => {
+    if (document.getElementById('global-capture')?.hidden !== false) globalSearchInput?.focus({ preventScroll: true });
+  });
 }
 
 function closeGlobalSearch() {
   if (!globalSearch) return;
+  window.SlateCapture?.close?.(false);
   globalSearch.hidden = true;
   if (globalSearchInput) globalSearchInput.value = '';
   globalSearchOpen?.focus({ preventScroll: true });
@@ -1278,13 +1384,24 @@ async function activateGlobalSearchResult(button) {
   if (!button) return;
   const { tab, resultId, resultKind } = button.dataset;
   closeGlobalSearch();
+  if (resultKind === '应用') {
+    await window.SlateWorkspace?.launchLauncher?.(Number(resultId));
+    return;
+  }
+  if (resultKind === '剪贴板') {
+    await copyClipEntry(resultId);
+    return;
+  }
   if (resultKind === '待办') {
     const found = findTodo(resultId);
     if (found) {
       todoTag = 'all';
       todoView = ['today', 'upcoming', 'inbox', 'done'].find((view) => (
-        window.SlateDomain.todoBelongsToView(found.item, view, new Date())
+        taskMatchesView(found.item, view, new Date())
       )) || 'today';
+      todoStatusFilter = 'all';
+      const filter = document.getElementById('todo-status-filter');
+      if (filter) filter.value = 'all';
       document.querySelectorAll('.todo-view[data-view]').forEach((item) => item.classList.toggle('is-active', item.dataset.view === todoView));
       document.querySelectorAll('.todo-tag[data-tag]').forEach((item) => item.classList.toggle('is-active', item.dataset.tag === 'all'));
     }
@@ -1320,6 +1437,10 @@ globalSearch?.addEventListener('click', (event) => {
   if (event.target === globalSearch) closeGlobalSearch();
 });
 globalSearch?.addEventListener('keydown', (event) => {
+  if (document.getElementById('global-capture')?.hidden === false) {
+    if (event.key === 'Escape') { event.preventDefault(); window.SlateCapture?.close?.(); }
+    return;
+  }
   const items = [...globalSearchResults.querySelectorAll('.global-search-result')];
   if (event.key === 'Escape') {
     event.preventDefault();
@@ -1588,7 +1709,7 @@ function renderTodoCalendar() {
 
 function closeTodoEditor() {
   if (todoEditorBackdrop) todoEditorBackdrop.hidden = true;
-  if (todoEditorContext?.mode === 'edit') {
+  if (['edit','plan'].includes(todoEditorContext?.mode)) {
     renderList();
   }
   todoEditorContext = null;
@@ -1606,6 +1727,13 @@ function selectedTodoDeadline() {
 
 function applyTodoEditorSelection(markManual = true) {
   if (!todoEditorContext) return false;
+  if(todoEditorContext.mode==='plan') {
+    if(!markManual)return true;
+    const date=window.SlateWorkflow.dateKey(new Date(todoEditorYear,todoEditorMonthIndex,todoEditorDay));
+    const found=findTodo(todoEditorContext.id);if(!found || !date)return false;
+    data[found.bucket][found.index]=window.SlateWorkflow.setPlan(found.item,'day',new Date(),date);
+    saveData(data);return true;
+  }
   const deadline = selectedTodoDeadline();
   if (!deadline || Date.parse(deadline) <= Date.now()) {
     if (todoEditorError) todoEditorError.textContent = '请选择晚于当前时间的截止点';
@@ -1616,6 +1744,8 @@ function applyTodoEditorSelection(markManual = true) {
   if (mode === 'edit') {
     const found = findTodo(id);
     if (!found) return false;
+    if (!markManual) return true;
+    if (found.item.deadline !== deadline) found.item.remindedAt = 0;
     found.item.deadline = deadline;
     saveData(data);
   } else {
@@ -1632,14 +1762,17 @@ function applyTodoEditorSelection(markManual = true) {
   return true;
 }
 
-function openTodoEditor(priority, item = null, anchor = null) {
+function openTodoEditor(priority, item = null, anchor = null, field = 'deadline') {
   const now = new Date();
   const trigger = document.getElementById('todo-quick-deadline');
-  const candidate = item && item.deadline ? new Date(item.deadline) : trigger?.dataset.deadline ? new Date(trigger.dataset.deadline) : null;
+  const candidate = field==='plan' && item?.planDate ? new Date(`${item.planDate}T12:00:00`) : item && item.deadline ? new Date(item.deadline) : trigger?.dataset.deadline ? new Date(trigger.dataset.deadline) : null;
   const selectedDate = candidate && Number.isFinite(candidate.getTime())
     ? candidate
     : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 30, 0, 0);
-  todoEditorContext = { priority, id: item && item.id || '', mode: item ? 'edit' : 'add' };
+  todoEditorContext = { priority, id: item && item.id || '', mode: field==='plan'?'plan':item ? 'edit' : 'add' };
+  const timeRow=document.querySelector('#todo-date-popover .todo-time-row');if(timeRow)timeRow.hidden=field==='plan';
+  const purpose=document.getElementById('todo-editor-purpose');if(purpose)purpose.textContent=field==='plan'?'打算哪天做':'最晚什么时候完成';
+  todoEditorBackdrop?.querySelector('.todo-editor-card')?.setAttribute('aria-label',field==='plan'?'计划执行日期':'截止日期与时间');
   todoEditorYear = selectedDate.getFullYear();
   todoEditorMonthIndex = selectedDate.getMonth();
   todoEditorDay = selectedDate.getDate();
@@ -1652,7 +1785,7 @@ function openTodoEditor(priority, item = null, anchor = null) {
     const target = anchor || (item
       ? document.querySelector(`.todo-item[data-id="${CSS.escape(item.id)}"] .todo-inline-deadline`)
       : trigger);
-    const host = target?.closest('.todo-main') || document.querySelector('.todo-main');
+    const host = target?.closest('.todo-main, .home-tasks') || document.querySelector('.todo-main');
     host?.appendChild(todoEditorBackdrop);
     todoEditorBackdrop.hidden = false;
     todoEditorBackdrop.style.removeProperty('left');
@@ -1779,6 +1912,7 @@ if (quickInput) {
     submitQuickTodo(input);
   });
   quickDeadline?.addEventListener('click', () => openTodoEditor(quickCat?.value || 'P3'));
+  document.getElementById('todo-quick-add')?.addEventListener('click',()=>submitQuickTodo());
 }
 
 document.querySelectorAll('.todo-view[data-view]').forEach((button) => {
@@ -1787,8 +1921,17 @@ document.querySelectorAll('.todo-view[data-view]').forEach((button) => {
     document.querySelectorAll('.todo-view').forEach((el) => el.classList.toggle('is-active', el === button));
     todoSelection.clear();
     todoSelectionAnchor = null;
+    expandedTodoId = '';
+    const plan = document.getElementById('todo-quick-plan');
+    if (plan) plan.value={today:'day',upcoming:'week',inbox:'later'}[todoView] || 'day';
     renderList();
   });
+});
+
+document.getElementById('todo-status-filter')?.addEventListener('change',event=> {
+  todoStatusFilter = event.target.value;
+  todoSelection.clear(); todoSelectionAnchor = null; expandedTodoId = '';
+  renderList();
 });
 document.querySelectorAll('.todo-tag[data-tag]').forEach((button) => {
   button.addEventListener('click', (e) => {
@@ -1803,6 +1946,12 @@ document.querySelectorAll('.todo-tag[data-tag]').forEach((button) => {
 
 const unifiedList = document.getElementById('todo-list');
 if (unifiedList) {
+  unifiedList.addEventListener('change',event=> {
+    if(event.target.matches('[data-detail="plan"]')) {
+      const date=event.target.closest('.todo-work-fields')?.querySelector('[data-detail="plan-date"]');
+      if(date)date.hidden=event.target.value!=='day';
+    }
+  });
   unifiedList.addEventListener('click', (e) => {
     const item = e.target.closest('.todo-item');
     if (!item) return;
@@ -1830,9 +1979,35 @@ if (unifiedList) {
     } else if (action === 'pin') {
       const found = findTodo(id);
       if (!found) return;
-      found.item.pinnedToday = found.item.pinnedToday !== true;
+      data[found.bucket][found.index] = window.SlateWorkflow.setFocus(found.item,!window.SlateWorkflow.isFocus(found.item),new Date(),nextFocusOrder());
       saveData(data);
       renderList();
+    } else if (action === 'details') {
+      expandedTodoId = expandedTodoId === id ? '' : id;
+      renderList();
+    } else if (action === 'save-details') {
+      const found = findTodo(id);
+      if (!found) return;
+      const followupText = item.querySelector('[data-detail="followup"]').value;
+      const followupTime = followupText ? new Date(followupText).getTime() : NaN;
+      if (followupText && !Number.isFinite(followupTime)) return showStatusToast('提醒时间无效，请重新选择');
+      const followupAt = Number.isFinite(followupTime) ? new Date(followupTime).toISOString() : '';
+      const planKind=item.querySelector('[data-detail="plan"]').value;
+      const planDate=item.querySelector('[data-detail="plan-date"]').value;
+      if(planKind==='day' && !planDate) return showStatusToast('请选择打算执行的日期');
+      const planChanged=planKind!==found.item.planKind || (planKind==='day' && planDate!==found.item.planDate);
+      if(planChanged) data[found.bucket][found.index]=window.SlateWorkflow.setPlan(found.item,planKind,new Date(),planDate);
+      const target = data[found.bucket][found.index];
+      Object.assign(target,{
+        status:item.querySelector('[data-detail="status"]').value,
+        estimateMinutes:Number(item.querySelector('[data-detail="estimate"]').value),
+        notes:item.querySelector('[data-detail="notes"]').value.trim(),
+        followupRemindedAt:followupAt === target.followupAt ? target.followupRemindedAt : 0,
+        followupAt,
+      });
+      data[found.bucket][found.index] = window.SlateWorkflow.normalizeTodo(target);
+      expandedTodoId = '';
+      saveData(data); renderList(); showStatusToast('任务详情已保存');
     } else if (action === 'cycle-cat') {
       const found = findTodo(id);
       if (!found) return;
@@ -1855,7 +2030,7 @@ if (unifiedList) {
     } else if (action === 'save-edit') {
       const found = findTodo(id);
       const name = item.querySelector('.todo-inline-name')?.value.trim() || '';
-      if (!found || !name || !found.item.deadline) return;
+      if (!found || !name) return;
       editingTodo = null;
       editTodo(id, name, found.item.deadline);
     } else if (action === 'delete') {
@@ -1904,19 +2079,22 @@ function refreshTodoDefaultDeadlineKey(now = new Date()) {
 refreshTodoDefaultDeadlineKey();
 setInterval(refreshTodoDefaultDeadlineKey, 30_000);
 
-// ============ 首页 · Markdown 速记 ============
-// textarea 中的原始 Markdown 始终是唯一数据源；预览只用 DOM API + textContent 构建，
-// 不执行用户输入的 HTML，也不自动加载远程图片。
+// ============ 首页 · 随手笔记（直接编辑，自动保存） ============
+// 首页只保留直接输入。Markdown 渲染工具继续兼容旧笔记内容和既有调用。
 const NOTE_KEY = 'slate-home-note';
 const NOTE_ARCHIVE_KEY = 'slate-note-archive-v1';
 const NOTE_ACTIVE_ARCHIVE_KEY = 'slate-note-active-archive-v1';
+const NOTE_LIBRARY_ACTIVE_KEY = 'slate-note-library-active-v1';
 const noteInput = document.getElementById('home-note');
 const notePreview = document.getElementById('home-note-preview');
 const noteSaveButton = document.getElementById('note-save-btn');
+const homeNoteNewButton = document.getElementById('home-note-new');
+const homeNoteSaveState = document.getElementById('home-note-save-state');
 const notesList = document.getElementById('notes-list');
 const notesSearch = document.getElementById('notes-search');
 const notesDetail = document.getElementById('notes-detail');
 const notesCount = document.getElementById('notes-count');
+const notesNewButton = document.getElementById('notes-new');
 const noteFormatActions = document.getElementById('note-format-actions');
 const noteEditButton = document.getElementById('note-edit-btn');
 const homeNote = document.querySelector('.home-note');
@@ -2179,7 +2357,7 @@ function buildMarkdownPreview(source) {
 }
 
 function renderNotePreview() {
-  if (!noteInput || !notePreview) return;
+  if (!noteInput || !notePreview || notePreview.hidden) return;
   notePreview.replaceChildren(buildMarkdownPreview(noteInput.value));
 }
 
@@ -2341,55 +2519,16 @@ function applyNoteFormat(type) {
 let noteMode = 'edit';
 let noteSelection = { start: 0, end: 0, direction: 'none', scrollTop: 0 };
 
-function setNoteMode(mode, focusTarget = true) {
-  if (!noteInput || !notePreview) return;
-  const previousMode = noteMode;
-  noteMode = mode === 'preview' ? 'preview' : 'edit';
-  const isPreview = noteMode === 'preview';
-
-  if (isPreview) {
-    noteSelection = {
-      start: noteInput.selectionStart,
-      end: noteInput.selectionEnd,
-      direction: noteInput.selectionDirection,
-      scrollTop: noteInput.scrollTop,
-    };
-    renderNotePreview();
-  } else if (previousMode === 'edit') {
-    // 重复点击已选中的“编辑”时保留用户当下光标，而不是恢复旧选区。
-    noteSelection = {
-      start: noteInput.selectionStart,
-      end: noteInput.selectionEnd,
-      direction: noteInput.selectionDirection,
-      scrollTop: noteInput.scrollTop,
-    };
-  }
-
-  noteInput.hidden = isPreview;
-  notePreview.hidden = !isPreview;
-  if (noteFormatActions) noteFormatActions.hidden = isPreview;
-  if (homeNote) homeNote.classList.toggle('is-preview', isPreview);
-
-  if (noteEditButton) {
-    noteEditButton.classList.toggle('active', !isPreview);
-    noteEditButton.textContent = isPreview ? '编辑' : '完成';
-    noteEditButton.setAttribute('aria-pressed', String(!isPreview));
-  }
-
-  if (!focusTarget) return;
-  requestAnimationFrame(() => {
-    if (isPreview) {
-      notePreview.focus({ preventScroll: true });
-    } else {
-      noteInput.focus({ preventScroll: true });
-      noteInput.setSelectionRange(
-        noteSelection.start,
-        noteSelection.end,
-        noteSelection.direction
-      );
-      noteInput.scrollTop = noteSelection.scrollTop;
-    }
-  });
+function setNoteMode(_mode = 'edit', focusTarget = true) {
+  // Older callers can still request a mode; homepage capture is always editable.
+  noteMode = 'edit';
+  if (!noteInput) return;
+  noteInput.hidden = false;
+  if (notePreview) notePreview.hidden = true;
+  if (noteFormatActions) noteFormatActions.hidden = true;
+  if (noteEditButton) noteEditButton.hidden = true;
+  homeNote?.classList.remove('is-preview');
+  if (focusTarget) requestAnimationFrame(() => noteInput.focus({ preventScroll: true }));
 }
 
 function continueNoteList(event) {
@@ -2456,54 +2595,159 @@ function continueNoteList(event) {
   return true;
 }
 
+let homeNoteSaveTimer = null;
+let homeNoteDirty = false;
+let homeNotePendingArchiveId = '';
+let homeNoteStorageIdentity = null;
+
+function readHomeNoteStorageIdentity() {
+  return {
+    content: localStorage.getItem(NOTE_KEY),
+    activeId: localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY),
+  };
+}
+
+function setHomeNoteSaveState(message, failed = false) {
+  if (!homeNoteSaveState) return;
+  homeNoteSaveState.textContent = message;
+  homeNoteSaveState.dataset.state = failed ? 'error' : homeNoteDirty ? 'saving' : 'saved';
+}
+
+function saveHomeNote() {
+  clearTimeout(homeNoteSaveTimer);
+  homeNoteSaveTimer = null;
+  if (!noteInput || !homeNoteDirty) return true;
+  if (workspaceReloadPending) return false;
+  if (workspaceHydrating) {
+    homeNoteSaveTimer = setTimeout(saveHomeNote, 150);
+    return false;
+  }
+  try {
+    const identity = readHomeNoteStorageIdentity();
+    // A backup import or a workspace change can replace storage before reload.
+    // Never let an old textarea's pending input overwrite recovered content.
+    if (homeNoteStorageIdentity && (
+      identity.content !== homeNoteStorageIdentity.content
+      || identity.activeId !== homeNoteStorageIdentity.activeId
+    )) {
+      noteInput.value = identity.content || '';
+      homeNoteStorageIdentity = identity;
+      homeNoteDirty = false;
+      homeNotePendingArchiveId = '';
+      setHomeNoteSaveState('已恢复记录');
+      return false;
+    }
+    const content = noteInput.value;
+    if (!content.trim()) {
+      // Clearing the capture box starts a new draft; it never erases its archive.
+      localStorage.setItem(NOTE_KEY, content);
+      homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+      localStorage.removeItem(NOTE_ACTIVE_ARCHIVE_KEY);
+      homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+      homeNotePendingArchiveId = '';
+    } else {
+      const archive = loadNoteArchive();
+      const activeId = homeNotePendingArchiveId || identity.activeId || '';
+      const existing = archive.find((note) => note.id === activeId);
+      const now = Date.now();
+      const note = existing ? { ...existing, content, updatedAt: now }
+        : { id: activeId || generateId(), content, createdAt: now, updatedAt: now };
+      // Keep the chosen id across storage errors so retry never creates duplicates.
+      homeNotePendingArchiveId = note.id;
+      const notes = window.SlateDomain.normalizeNoteArchive([note, ...archive.filter((item) => item.id !== note.id)]);
+      localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(notes));
+      localStorage.setItem(NOTE_KEY, content);
+      homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+      localStorage.setItem(NOTE_ACTIVE_ARCHIVE_KEY, note.id);
+      homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+      homeNotePendingArchiveId = '';
+      // 首页持续输入时，不重复构建不可见的整份笔记列表。
+      if (document.getElementById('tab-notes')?.classList.contains('active')) {
+        renderNotesLibrary({ preserveEditor: true });
+      }
+    }
+    homeNoteDirty = false;
+    setHomeNoteSaveState('已自动保存');
+    return true;
+  } catch (error) {
+    setHomeNoteSaveState('未能保存，请重试', true);
+    return false;
+  }
+}
+
+function scheduleHomeNoteSave() {
+  if (!noteInput) return;
+  if (!homeNoteDirty) {
+    try { homeNoteStorageIdentity = readHomeNoteStorageIdentity(); } catch (error) { /* Save reports the failure. */ }
+  }
+  homeNoteDirty = true;
+  setHomeNoteSaveState('正在保存…');
+  clearTimeout(homeNoteSaveTimer);
+  homeNoteSaveTimer = null;
+  if (!noteComposing) homeNoteSaveTimer = setTimeout(saveHomeNote, 300);
+}
+
+function startNewHomeNote() {
+  if (!noteInput || workspaceReloadPending || workspaceHydrating) return;
+  // Older versions kept a draft outside the archive. Preserve it before clearing.
+  if (noteInput.value.trim() && !homeNoteDirty) {
+    homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+    homeNoteDirty = true;
+  }
+  if (!saveHomeNote()) return;
+  try {
+    localStorage.setItem(NOTE_KEY, '');
+    homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+    localStorage.removeItem(NOTE_ACTIVE_ARCHIVE_KEY);
+    homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+    noteInput.value = '';
+    homeNotePendingArchiveId = '';
+    homeNoteDirty = false;
+    setHomeNoteSaveState('直接输入，自动保存');
+    noteInput.focus({ preventScroll: true });
+  } catch (error) {
+    setHomeNoteSaveState('未能保存，请重试', true);
+  }
+}
+
 if (noteInput) {
   try {
     noteInput.value = localStorage.getItem(NOTE_KEY) || '';
-  } catch (e) {
-    // ignore
+    homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+    setHomeNoteSaveState(noteInput.value ? '已恢复记录' : '直接输入，自动保存');
+  } catch (error) {
+    setHomeNoteSaveState('未能读取记录', true);
   }
-
-  let noteTimer = null;
-  const saveNote = () => {
-    if (noteTimer) clearTimeout(noteTimer);
-    noteTimer = null;
-    if (workspaceReloadPending || workspaceHydrating) return;
-    try {
-      localStorage.setItem(NOTE_KEY, noteInput.value);
-    } catch (e) {
-      // ignore quota errors
-    }
-  };
-
-  noteInput.addEventListener('input', () => {
-    if (!noteInput.value.trim()) localStorage.removeItem(NOTE_ACTIVE_ARCHIVE_KEY);
-    renderNotePreview();
-    clearTimeout(noteTimer);
-    noteTimer = setTimeout(saveNote, 300);
-  });
-  noteInput.addEventListener('blur', saveNote);
+  noteInput.addEventListener('input', scheduleHomeNoteSave);
+  noteInput.addEventListener('blur', saveHomeNote);
   noteInput.addEventListener('compositionstart', () => {
     noteComposing = true;
+    clearTimeout(homeNoteSaveTimer);
+    homeNoteSaveTimer = null;
   });
   noteInput.addEventListener('compositionend', () => {
     noteComposing = false;
+    if (homeNoteDirty) scheduleHomeNoteSave();
   });
   noteInput.addEventListener('keydown', (event) => {
-    if (continueNoteList(event)) return;
-    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.isComposing) return;
-    const key = event.key.toLowerCase();
-    if (key !== 'b' && key !== 'i') return;
-    event.preventDefault();
-    applyNoteFormat(key === 'b' ? 'bold' : 'italic');
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && !event.isComposing) {
+      event.preventDefault();
+      saveHomeNote();
+    }
   });
-
-  window.addEventListener('beforeunload', saveNote);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) saveNote();
+  window.addEventListener('beforeunload', saveHomeNote);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveHomeNote(); });
+  document.addEventListener('slate:tabchange', (event) => {
+    if (event.detail?.tab === 'home') return;
+    const hadPendingCapture = homeNoteDirty;
+    const saved = saveHomeNote();
+    // Tab loading can render the library before the tabchange event. Refresh its
+    // editor after flushing so an immediate switch never shows stale capture text.
+    if (event.detail?.tab === 'notes' && hadPendingCapture && saved) renderNotesLibrary();
   });
-
-  noteInput.hidden = false;
+  setNoteMode('edit', false);
 }
+homeNoteNewButton?.addEventListener('click', startNewHomeNote);
 
 function loadNoteArchive() {
   try {
@@ -2515,9 +2759,32 @@ function loadNoteArchive() {
 }
 
 let selectedNoteId = '';
+let notesDraft = null;
+
+function newNotesDraft() {
+  const now = Date.now();
+  return { id: generateId(), title: '', titleSource: 'user', content: '', createdAt: now, updatedAt: now };
+}
+
+function rememberSelectedNote() {
+  if (selectedNoteId && selectedNoteId !== notesDraft?.id) {
+    localStorage.setItem(NOTE_LIBRARY_ACTIVE_KEY, selectedNoteId);
+  }
+}
+
+function startNewNote() {
+  flushNotesEditorSave();
+  if (notesSearch) notesSearch.value = '';
+  notesDraft = newNotesDraft();
+  selectedNoteId = notesDraft.id;
+  localStorage.removeItem(NOTE_LIBRARY_ACTIVE_KEY);
+  renderNotesLibrary();
+  notesDetail?.querySelector('#notes-editor')?.focus();
+}
 
 function noteArchiveTitle(note) {
-  return String(note && note.title || '').trim() || '未命名笔记';
+  const firstLine = String(note?.content || '').split(/\r?\n/).find((line) => line.trim()) || '';
+  return String(note?.title || '').trim() || firstLine.replace(/^\s*[#>*+-]+\s*/, '').trim().slice(0, 80) || '未命名笔记';
 }
 
 function noteArchiveExcerpt(note) {
@@ -2538,14 +2805,11 @@ function noteArchiveTime(timestamp) {
 function renderNotesDetail(notes = loadNoteArchive()) {
   if (!notesDetail) return;
   notesDetail.replaceChildren();
-  const note = notes.find((item) => item.id === selectedNoteId);
+  const note = notes.find((item) => item.id === selectedNoteId) || (notesDraft?.id === selectedNoteId ? notesDraft : null);
   if (!note) {
     const empty = document.createElement('div');
     empty.className = 'notes-detail-empty';
-    const hasArchive = loadNoteArchive().length > 0;
-    empty.innerHTML = hasArchive
-      ? '<span class="notes-empty-mark" aria-hidden="true">⌕</span><strong>没有匹配的笔记</strong><p>试试搜索其他关键词。</p>'
-      : '<span class="notes-empty-mark" aria-hidden="true">✎</span><strong>还没有保存的笔记</strong><p>在首页的「随笔记」中写下内容，点击保存后会出现在这里。</p>';
+    empty.innerHTML = '<strong>没有匹配的笔记</strong><p>换个关键词，或直接新建一篇。</p><button type="button" class="notes-empty-action" data-action="clear-note-search">清空搜索</button><button type="button" class="notes-empty-action" data-action="new-note">新建笔记</button>';
     notesDetail.append(empty);
     return;
   }
@@ -2558,14 +2822,16 @@ function renderNotesDetail(notes = loadNoteArchive()) {
   title.className = 'notes-detail-title';
   title.dataset.noteId = note.id;
   title.value = String(note.title || '');
-  title.placeholder = '未命名笔记';
+  title.placeholder = String(note.content || '').trim() ? noteArchiveTitle(note) : '标题（选填）';
   title.maxLength = 80;
   title.autocomplete = 'off';
   title.spellcheck = false;
   title.setAttribute('aria-label', '笔记标题，可直接修改');
   const time = document.createElement('time');
   time.className = 'notes-detail-time';
-  time.textContent = `更新于 ${noteArchiveTime(note.updatedAt)}`;
+  time.textContent = note === notesDraft ? '直接写下内容，自动保存' : `已保存 · ${noteArchiveTime(note.updatedAt)}`;
+  time.setAttribute('role', 'status');
+  time.setAttribute('aria-live', 'polite');
   heading.append(title, time);
   const actions = document.createElement('div');
   actions.className = 'notes-detail-actions';
@@ -2575,6 +2841,7 @@ function renderNotesDetail(notes = loadNoteArchive()) {
   remove.dataset.action = 'delete-note';
   remove.setAttribute('aria-label', '删除笔记');
   remove.title = '删除笔记';
+  remove.hidden = note === notesDraft;
   remove.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M7 7l1 12h10l1-12"/></svg>';
   actions.append(remove);
   header.append(heading, actions);
@@ -2584,11 +2851,11 @@ function renderNotesDetail(notes = loadNoteArchive()) {
   editor.className = 'notes-editor';
   editor.dataset.noteId = note.id;
   editor.value = note.content;
-  editor.placeholder = '直接输入笔记内容…';
+  editor.placeholder = '在这里直接写笔记、想法或工作记录…';
   editor.setAttribute('aria-label', `编辑笔记：${noteArchiveTitle(note)}`);
   editor.spellcheck = false;
   notesDetail.append(header, editor);
-  requestNoteTitle(note);
+  if (note !== notesDraft) requestNoteTitle(note);
 }
 
 let notesSaveTimer = null;
@@ -2611,6 +2878,7 @@ async function requestNoteTitle(note) {
     noteTitleAttempts.delete(note.id);
     return;
   }
+  flushNotesEditorSave();
   const next = window.SlateDomain.applyGeneratedNoteTitle(
     loadNoteArchive(),
     note.id,
@@ -2622,8 +2890,9 @@ async function requestNoteTitle(note) {
     noteTitleAttempts.delete(note.id);
     return;
   }
-  localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(next.slice(0, 200)));
-  renderNotesLibrary();
+  localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(next));
+  updateSavedNotePresentation(updated);
+  renderNotesLibrary({ preserveEditor: true });
 }
 
 function updateSavedNotePresentation(note) {
@@ -2631,8 +2900,12 @@ function updateSavedNotePresentation(note) {
   const title = noteArchiveTitle(note);
   const detailTitle = notesDetail?.querySelector('.notes-detail-title');
   const detailTime = notesDetail?.querySelector('.notes-detail-time');
-  if (detailTitle && document.activeElement !== detailTitle) detailTitle.value = note.title || '';
-  if (detailTime) detailTime.textContent = `已保存 · ${noteArchiveTime(note.updatedAt)}`;
+  const isSelected = detailTitle?.dataset.noteId === note.id;
+  if (isSelected && document.activeElement !== detailTitle) detailTitle.value = note.title || '';
+  if (isSelected) detailTitle.placeholder = noteArchiveTitle(note);
+  if (isSelected && detailTime) detailTime.textContent = `已保存 · ${noteArchiveTime(note.updatedAt)}`;
+  const remove = notesDetail?.querySelector('[data-action="delete-note"]');
+  if (isSelected && remove) remove.hidden = false;
   const row = notesList?.querySelector(`[data-note-id="${CSS.escape(note.id)}"]`);
   if (!row) return;
   const rowTitle = row.querySelector('strong');
@@ -2645,20 +2918,35 @@ function updateSavedNotePresentation(note) {
 
 function persistNotesEditor(editor) {
   if (!editor || !editor.dataset.noteId) return;
-  const notes = window.SlateDomain.updateNoteInArchive(
-    loadNoteArchive(),
-    editor.dataset.noteId,
-    editor.value,
-    Date.now()
-  );
-  localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(notes.slice(0, 200)));
-  const updated = notes.find((note) => note.id === editor.dataset.noteId);
-  if (localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY) === editor.dataset.noteId && noteInput) {
+  if (workspaceReloadPending || workspaceHydrating) return;
+  const id = editor.dataset.noteId;
+  const archive = loadNoteArchive();
+  const titleField = notesDetail?.querySelector('.notes-detail-title');
+  const title = titleField?.dataset.noteId === id ? titleField.value : '';
+  let notes;
+  if (notesDraft?.id === id && !archive.some((note) => note.id === id)) {
+    notesDraft.content = editor.value;
+    notesDraft.title = title;
+    if (!editor.value.trim() && !title.trim()) {
+      const time = notesDetail?.querySelector('.notes-detail-time');
+      if (time) time.textContent = '直接写下内容，自动保存';
+      return;
+    }
+    notes = window.SlateDomain.normalizeNoteArchive([{ ...notesDraft, updatedAt: Date.now() }, ...archive]);
+    notesDraft = null;
+  } else {
+    notes = window.SlateDomain.updateNoteInArchive(archive, id, editor.value, Date.now());
+  }
+  localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(notes));
+  rememberSelectedNote();
+  const updated = notes.find((note) => note.id === id);
+  if (localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY) === id && noteInput) {
     noteInput.value = editor.value;
     localStorage.setItem(NOTE_KEY, editor.value);
     renderNotePreview();
   }
   updateSavedNotePresentation(updated);
+  renderNotesLibrary({ preserveEditor: true });
   if (pendingNotesEditor === editor) pendingNotesEditor = null;
 }
 
@@ -2684,19 +2972,27 @@ function scheduleNotesEditorSave(editor) {
   }, 220);
 }
 
-function renderNotesLibrary() {
+function renderNotesLibrary({ preserveEditor = false } = {}) {
   if (!notesList) return;
   const archive = loadNoteArchive();
   const notes = window.SlateDomain.filterNotes(archive, notesSearch?.value || '');
   if (notesCount) notesCount.textContent = `${archive.length} 篇`;
-  if (!notes.some((note) => note.id === selectedNoteId)) selectedNoteId = notes[0]?.id || '';
+  if (!selectedNoteId && !notesDraft) selectedNoteId = localStorage.getItem(NOTE_LIBRARY_ACTIVE_KEY) || '';
+  if (!preserveEditor && notesDraft?.id !== selectedNoteId && !notes.some((note) => note.id === selectedNoteId)) {
+    selectedNoteId = notes[0]?.id || '';
+  }
+  if (!selectedNoteId && !String(notesSearch?.value || '').trim()) {
+    notesDraft ||= newNotesDraft();
+    selectedNoteId = notesDraft.id;
+  }
+  rememberSelectedNote();
   notesList.replaceChildren();
   if (!notes.length) {
     const empty = document.createElement('div');
     empty.className = 'notes-list-empty';
-    empty.textContent = archive.length ? '没有找到相关笔记' : '保存的笔记会出现在这里';
+    empty.textContent = archive.length ? '没有找到相关笔记' : '直接在右侧写，有内容后会自动出现在这里';
     notesList.append(empty);
-    renderNotesDetail(notes);
+    if (!preserveEditor) renderNotesDetail(notes);
     return;
   }
   notes.forEach((note) => {
@@ -2715,56 +3011,42 @@ function renderNotesLibrary() {
     button.append(title, excerpt, time);
     notesList.append(button);
   });
-  renderNotesDetail(notes);
+  if (!preserveEditor) renderNotesDetail(notes);
 }
 
-noteSaveButton?.addEventListener('click', () => {
-  const content = noteInput?.value.trim() || '';
-  if (!content) {
-    showStatusToast('先写点内容再存档');
-    return;
-  }
-  const notes = loadNoteArchive();
-  let activeId = localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY) || '';
-  const existing = notes.find((item) => item.id === activeId);
-  if (existing) {
-    existing.content = content;
-    existing.updatedAt = Date.now();
-  } else {
-    activeId = generateId();
-    notes.unshift({ id: activeId, content, createdAt: Date.now(), updatedAt: Date.now() });
-  }
-  localStorage.setItem(NOTE_ACTIVE_ARCHIVE_KEY, activeId);
-  localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(notes.slice(0, 200)));
-  localStorage.setItem(NOTE_KEY, noteInput.value);
-  selectedNoteId = activeId;
-  renderNotesLibrary();
-  showStatusToast('笔记已保存');
-});
+noteSaveButton?.addEventListener('click', saveHomeNote);
 
 notesList?.addEventListener('click', (event) => {
   const row = event.target.closest('[data-note-id]');
   if (!row) return;
   flushNotesEditorSave();
   selectedNoteId = row.dataset.noteId;
+  notesDraft = null;
   renderNotesLibrary();
 });
 
 notesSearch?.addEventListener('input', () => {
   flushNotesEditorSave();
+  if (notesDraft) { notesDraft = null; selectedNoteId = ''; }
   renderNotesLibrary();
 });
 
 notesDetail?.addEventListener('input', (event) => {
   const title = event.target.closest('.notes-detail-title');
   if (title?.dataset.noteId) {
+    if (notesDraft?.id === title.dataset.noteId) {
+      notesDraft.title = title.value;
+      const editor = notesDetail.querySelector('#notes-editor');
+      if (editor) scheduleNotesEditorSave(editor);
+      return;
+    }
     const notes = window.SlateDomain.updateNoteTitle(
       loadNoteArchive(),
       title.dataset.noteId,
       title.value,
       Date.now()
     );
-    localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(notes.slice(0, 200)));
+    localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(notes));
     updateSavedNotePresentation(notes.find((note) => note.id === title.dataset.noteId));
     return;
   }
@@ -2784,6 +3066,13 @@ notesDetail?.addEventListener('focusout', (event) => {
 notesDetail?.addEventListener('click', (event) => {
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
+  if (action === 'new-note') { startNewNote(); return; }
+  if (action === 'clear-note-search') {
+    if (notesSearch) notesSearch.value = '';
+    renderNotesLibrary();
+    notesSearch?.focus();
+    return;
+  }
   flushNotesEditorSave();
   const notes = loadNoteArchive();
   const note = notes.find((item) => item.id === selectedNoteId);
@@ -2794,15 +3083,40 @@ notesDetail?.addEventListener('click', (event) => {
     if (localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY) === note.id) {
       localStorage.removeItem(NOTE_ACTIVE_ARCHIVE_KEY);
     }
+    const deletedHomeContent = noteInput?.value || '';
+    homeNoteStorageIdentity = readHomeNoteStorageIdentity();
     selectedNoteId = next[0]?.id || '';
+    notesDraft = null;
+    localStorage.removeItem(NOTE_LIBRARY_ACTIVE_KEY);
     renderNotesLibrary();
-    showStatusToast('笔记已删除');
+    showStatusToast('笔记已删除', {
+      actionLabel: '撤销', duration: 6000,
+      onAction: () => {
+        flushNotesEditorSave();
+        saveHomeNote();
+        try {
+          const latest = loadNoteArchive();
+          if (!latest.some(item => item.id === note.id)) {
+            localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(window.SlateDomain.normalizeNoteArchive([note, ...latest])));
+          }
+          if (!localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY) && noteInput?.value === deletedHomeContent && deletedHomeContent === note.content) {
+            localStorage.setItem(NOTE_ACTIVE_ARCHIVE_KEY, note.id);
+            homeNoteStorageIdentity = readHomeNoteStorageIdentity();
+          }
+          renderNotesLibrary({ preserveEditor: true });
+          showStatusToast('已恢复笔记');
+        } catch (error) { showStatusToast('笔记未能恢复，请检查存储空间后重试'); }
+      },
+    });
     return;
   }
 });
 
+notesNewButton?.addEventListener('click', startNewNote);
+
 document.addEventListener('slate:tabchange', (event) => {
   if (event.detail?.tab !== 'notes') flushNotesEditorSave();
+  else if (!notesDetail?.querySelector('#notes-editor[data-note-id]') && !String(notesSearch?.value || '').trim()) renderNotesLibrary();
 });
 window.addEventListener('beforeunload', flushNotesEditorSave);
 
@@ -2847,14 +3161,14 @@ if (notePreview) {
 const HOME_ORDER_KEY = 'slate-home-order-v3';
 const HOME_SIZES_KEY = 'slate-home-widget-sizes-v2';
 const HOME_HIDDEN_MODULES_KEY = 'slate-home-hidden-modules-v1';
-const HOME_MODULE_REGISTRY = ['launcher', 'recorder', 'windows', 'note', 'translation'];
+const HOME_MODULE_REGISTRY = ['tasks', 'launcher', 'windows', 'note', 'translation'];
 const unavailableHomeModules = window.SlatePlatform.capabilities(window.slateAPI?.platform || 'darwin').unavailableHomeModules;
 const effectiveHomeHidden = (hidden) => window.SlatePlatform.effectiveHiddenModules(hidden, HOME_MODULE_REGISTRY, unavailableHomeModules);
-const HOME_ORDER_DEFAULTS = ['note', 'translation', 'launcher', 'windows', 'recorder'];
+const HOME_ORDER_DEFAULTS = ['tasks', 'note', 'translation', 'launcher', 'windows'];
 const HOME_SIZE_DEFAULTS = {
-  note: 'large',
+  tasks: 'large',
+  note: 'medium',
   launcher: 'medium',
-  recorder: 'medium',
   translation: 'medium',
   windows: 'medium',
 };
@@ -2876,6 +3190,8 @@ function loadHomeOrder() {
         kept.push(id);
       });
       if (kept.length) {
+        // 旧版本将待办混在笔记卡里；升级后把独立待办放在首页首位。
+        if (!kept.includes('tasks')) kept.unshift('tasks');
         return [...kept, ...HOME_ORDER_DEFAULTS.filter((id) => !kept.includes(id))];
       }
     }
@@ -2901,7 +3217,7 @@ function loadHomeSizes() {
 function loadHiddenHomeModules() {
   try {
     const rawText = localStorage.getItem(HOME_HIDDEN_MODULES_KEY);
-    if (rawText === null) return { hiddenIds: ['recorder'], needsRepair: true };
+    if (rawText === null) return { hiddenIds: [], needsRepair: true };
     const parsed = JSON.parse(rawText);
     const hiddenIds = window.SlateDomain.normalizeHiddenHomeModules(parsed, HOME_MODULE_REGISTRY);
     return {
@@ -3128,10 +3444,6 @@ function setHomeModuleVisible(moduleId, visible) {
   const changed = JSON.stringify(next.hiddenIds) !== JSON.stringify(current);
   if (!changed) {
     return { ok: true, changed: false, hiddenIds: current, persisted: homeVisibilityPersisted };
-  }
-  if (moduleId === 'recorder' && visible === false
-    && window.SlateWorkspace?.isRecordingActive?.()) {
-    return { ok: false, changed: false, error: 'recording_active', hiddenIds: current, persisted: homeVisibilityPersisted };
   }
   const layout = resolveValidatedHomeLayout(next.hiddenIds);
   const currentLayout = resolveValidatedHomeLayout(current);
@@ -3580,6 +3892,7 @@ function clipEntryHtml(entry, faved) {
     <span class="clip-text">${safeText}</span>
     <span class="clip-meta"><span class="clip-time">${timeStr}</span></span>
   </button>
+  <button class="clip-capture-action" type="button" data-action="capture" title="翻译、存笔记或转待办">处理</button>
   <button class="clip-fav-btn${favClass}" type="button" data-action="fav" aria-label="${favLabel}">${star}</button>
   <button class="clip-del-btn" type="button" data-action="delete" aria-label="删除">×</button>
 </div>`;
@@ -3692,6 +4005,11 @@ if (clipListEl) {
     const id = item.dataset.id;
     if (!id) return;
 
+    if (e.target.closest('[data-action="capture"]')) {
+      const entry = clipHistory.find(entry => entry.id === id);
+      if (entry?.text) window.SlateCapture?.open(entry.text);
+      return;
+    }
     // 优先判断子按钮
     const favoriteButton = e.target.closest('.clip-fav-btn');
     if (favoriteButton) {
@@ -3887,3 +4205,79 @@ if (window.slateAPI && typeof window.slateAPI.onNewClipEntry === 'function') {
 renderAll();
 renderClipList(); // 首屏确保 clip-list DOM 就绪时渲染一次（幂等）
 initTab();
+
+// Homepage planning is a projection of the existing task records.
+window.SlateTasks = Object.freeze({
+  getAll: allTodos,
+  matchesView: taskMatchesView,
+  toggle: toggleTodo,
+  add(text,options={}) {
+    const parsed = window.SlateDomain.parseQuickTodoDate(text,new Date());
+    return addTodo(PRIORITIES.includes('P3') ? 'P3' : PRIORITIES[0],parsed.text,parsed.deadline,false,{period:options.period || 'day',notes:options.notes,preserveDrafts:options.preserveDrafts});
+  },
+  setFocus(id,on) {
+    const found = findTodo(id); if (!found) return;
+    data[found.bucket][found.index] = window.SlateWorkflow.setFocus(found.item,on,new Date(),nextFocusOrder());
+    saveData(data); renderList();
+  },
+  moveFocus(id,direction) {
+    const items = window.SlateWorkflow.focusTasks(allTodos());
+    const index = items.findIndex(item=>item.id === id),next = index + direction;
+    if (index < 0 || next < 0 || next >= items.length) return;
+    [items[index],items[next]] = [items[next],items[index]];
+    items.forEach((item,order)=>{const found=findTodo(item.id);if(found) found.item.focusOrder=order;});
+    saveData(data); renderList();
+  },
+  prioritize(id) {
+    const found=findTodo(id);if(!found)return;
+    data[found.bucket][found.index]=window.SlateWorkflow.setFocus(found.item,true);
+    const ordered=[id,...window.SlateWorkflow.focusTasks(allTodos()).filter(item=>item.id!==id).map(item=>item.id)];
+    ordered.forEach((key,order)=>{const task=findTodo(key);if(task)task.item.focusOrder=order;});
+    saveData(data);renderList();
+  },
+  reschedule(id,anchor) {
+    const found = findTodo(id);
+    if (found) openTodoEditor(found.bucket,found.item,anchor,'plan');
+  },
+  async open(id='',period='day') {
+    todoTag = 'all'; todoStatusFilter = 'all';
+    const filter = document.getElementById('todo-status-filter'); if (filter) filter.value='all';
+    const found = id ? findTodo(id) : null;
+    todoView = found ? ['today','upcoming','inbox','done'].find(view=>taskMatchesView(found.item,view)) || 'today' : {day:'today',week:'upcoming',later:'inbox'}[period] || 'today';
+    const plan=document.getElementById('todo-quick-plan');if(plan)plan.value={today:'day',upcoming:'week',inbox:'later'}[todoView] || 'day';
+    expandedTodoId = found ? id : '';
+    document.querySelectorAll('.todo-view').forEach(button=>button.classList.toggle('is-active',button.dataset.view===todoView));
+    document.querySelectorAll('.todo-tag').forEach(button=>button.classList.toggle('is-active',button.dataset.tag==='all'));
+    await setActiveTab('todo'); renderList();
+    if(id)requestAnimationFrame(()=>document.querySelector(`#todo-list [data-id="${CSS.escape(id)}"]`)?.scrollIntoView({block:'nearest'}));
+  },
+});
+window.SlateWorkNotes = Object.freeze({
+  capture(text) {
+    if (workspaceHydrating || workspaceReloadPending || !String(text).trim() || String(text).length > 6000) return false;
+    flushNotesEditorSave();
+    saveHomeNote();
+    const now = Date.now();
+    const note = {id:generateId(),content:String(text),createdAt:now,updatedAt:now};
+    try {
+      localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(window.SlateDomain.normalizeNoteArchive([note, ...loadNoteArchive()])));
+      if (document.getElementById('tab-notes')?.classList.contains('active')) renderNotesLibrary({preserveEditor:true});
+      return true;
+    } catch (error) { return false; }
+  },
+  async review(period='day') {
+    flushNotesEditorSave();
+    const now = new Date(),draft = noteInput?.value.trim() || '';
+    let content = window.SlateWorkflow.makeReview(allTodos(),period,now);
+    if (draft) content += `\n\n## 随手记录\n${draft}\n`;
+    const note = {id:generateId(),content,title:`${window.SlateWorkflow.dateKey(now)} ${period==='week'?'本周':'今日'}复盘`,titleSource:'user',createdAt:now.getTime(),updatedAt:now.getTime()};
+    try {localStorage.setItem(NOTE_ARCHIVE_KEY,JSON.stringify([note,...loadNoteArchive()]));}
+    catch(error) {showStatusToast('存储空间不足，复盘未保存');return false;}
+    selectedNoteId = note.id;
+    if(notesSearch)notesSearch.value='';
+    renderNotesLibrary(); await setActiveTab('notes');
+    showStatusToast('复盘草稿已保存，补充原因与调整计划即可');
+    requestAnimationFrame(()=>document.querySelector('#notes-detail .notes-editor')?.focus());
+    return true;
+  },
+});

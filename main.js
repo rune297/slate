@@ -28,6 +28,12 @@ const { TranslationService } = require('./translation-service.cjs');
 let translationService;
 let translationShortcut = '';
 let translationProxy = '';
+let quickCaptureWindow = null;
+let captureShortcut = '';
+let quickCaptureTranslationOwner = null;
+let quickCaptureTranslationResident = null;
+let quickCaptureSequence = 0;
+const quickCaptureRequests = new Map();
 function localTranslator() {
   translationService ||= new TranslationService({
     root: path.join(app.getPath('userData'), 'translation-models'),
@@ -35,14 +41,22 @@ function localTranslator() {
       execPath: process.execPath, env: {...process.env, ...(translationProxy ? {HTTPS_PROXY:translationProxy} : {}), ELECTRON_RUN_AS_NODE:'1'},
       windowsHide:true, stdio:['ignore','pipe','pipe','ipc'],
     }),
-    notify: payload => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('translation:event', payload); },
+    notify: payload => {
+      const owner = quickCaptureTranslationOwner;
+      if (owner && !owner.isDestroyed()) owner.webContents.send('quick-capture:event', payload);
+      if (mainWindow && !mainWindow.isDestroyed() && (!owner || payload?.type === 'status')) mainWindow.webContents.send('translation:event', payload);
+    },
   });
   return translationService;
 }
 ipcMain.handle('translation:status', () => ({...localTranslator().status(), shortcut:translationShortcut}));
-ipcMain.handle('translation:clipboard', async () => String(await clipboard.readText()).slice(0,6000));
+ipcMain.handle('translation:clipboard', async () => String(await clipboard.readText()));
 ipcMain.handle('translation:run', async (event,payload) => {
-  try { return {ok:true,...await localTranslator().run('translate',String(payload?.text || ''),payload?.source || 'auto')}; }
+  try {
+    const service = localTranslator();
+    if (!service.status().busy) quickCaptureTranslationResident = null;
+    return {ok:true,...await service.run('translate',String(payload?.text || ''),payload?.source || 'auto')};
+  }
   catch (error) { return {ok:false,error:error.message}; }
 });
 ipcMain.handle('translation:install', async () => {
@@ -87,14 +101,19 @@ ipcMain.handle('translation:release', () => { localTranslator().release(); retur
 function configureTranslationShortcut(value) {
   if (value && (!isValidClipboardShortcut(value) || !/(Control|Alt|Shift)\+/.test(value))) return false;
   if (value === translationShortcut) return true;
-  if (value && (value === configuredShortcut || value === configuredClipShortcut || globalShortcut.isRegistered(value))) return false;
-  if (value && !globalShortcut.register(value,()=>openRendererPanel('translation:open'))) return false;
+  if (value && (value === configuredShortcut || value === configuredClipShortcut || value === captureShortcut || globalShortcut.isRegistered(value))) return false;
+  try { if (value && !globalShortcut.register(value,()=>openRendererPanel('translation:open'))) return false; }
+  catch (error) { return false; }
   if (translationShortcut) globalShortcut.unregister(translationShortcut);
   translationShortcut=value; return true;
 }
 ipcMain.handle('translation:shortcut', (event,value) => {
+  const previous = translationShortcut;
   if (typeof value !== 'string' || !configureTranslationShortcut(value)) return {ok:false,error:'occupied'};
-  writeJsonFile(getJsonSettingsPath('translation-settings.json'),{shortcut:value});
+  if (!writeJsonFile(getJsonSettingsPath('translation-settings.json'),{shortcut:value})) {
+    configureTranslationShortcut(previous);
+    return {ok:false,error:'save_failed'};
+  }
   return {ok:true};
 });
 const platformPolicy = require('./platform');
@@ -105,6 +124,7 @@ const {
   recordingExtension,
   normalizeWindowRows,
   todoReminderState,
+  todoFollowupReminderState,
   todoReminderTimerDelay,
   taskNotificationIdentity,
   normalizeCredentialInput,
@@ -1152,15 +1172,22 @@ function clearTodoReminderTimer() {
   todoReminderTimer = null;
 }
 
-function fireTodoReminder(todo) {
-  const deadline = Date.parse(String(todo.deadline || ''));
+function fireTodoReminder(todo, kind = 'deadline') {
+  const isFollowup = kind === 'followup';
+  const deadline = Date.parse(String((isFollowup ? todo.followupAt : todo.deadline) || ''));
+  const followupLabel = todo.status === 'waiting' ? '等待反馈' : todo.status === 'followup' ? '持续跟进' : '再次查看';
+  const text = String(todo.text || '').trim() || '待办事项';
   const notification = {
-    eventId: `todo-${todo.id}-${deadline}`,
+    eventId: `todo-${todo.id}-${kind}-${deadline}`,
     source: 'todo',
     taskId: String(todo.id || ''),
-    title: String(todo.text || '').trim() || '待办即将截止',
+    title: isFollowup ? `${followupLabel} · ${text}` : text,
     project: '',
-    detail: '将在 1 小时内截止',
+    detail: isFollowup
+      ? todo.status === 'waiting' ? '到反馈跟进时间了，可以联系对方确认进展'
+        : todo.status === 'followup' ? '到持续跟进时间了，查看进展并安排下一步'
+          : '到再次查看时间了，查看这件事并继续处理'
+      : '将在 1 小时内截止',
     deadline,
     completedAt: Date.now(),
   };
@@ -1168,7 +1195,9 @@ function fireTodoReminder(todo) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('todo:reminded', {
       id: notification.taskId,
+      kind,
       deadline: String(todo.deadline || ''),
+      ...(isFollowup ? { followupAt: String(todo.followupAt || '') } : {}),
       remindedAt: notification.completedAt,
     });
   }
@@ -1183,9 +1212,14 @@ function scheduleNextTodoReminder() {
     if (status.state === 'due') {
       todo.remindedAt = now;
       fireTodoReminder(todo);
-      continue;
     }
     if (status.state === 'scheduled') nextDelay = Math.min(nextDelay, status.delayMs);
+    const followup = todoFollowupReminderState(todo, now);
+    if (followup.state === 'due') {
+      todo.followupRemindedAt = now;
+      fireTodoReminder(todo, 'followup');
+    }
+    if (followup.state === 'scheduled') nextDelay = Math.min(nextDelay, followup.delayMs);
   }
   if (Number.isFinite(nextDelay)) {
     todoReminderTimer = setTimeout(scheduleNextTodoReminder, todoReminderTimerDelay(nextDelay));
@@ -1193,6 +1227,7 @@ function scheduleNextTodoReminder() {
 }
 
 ipcMain.handle('todos:schedule-reminders', (event, items) => {
+  const previousById = new Map(scheduledTodoReminders.map((todo) => [todo.id, todo]));
   scheduledTodoReminders = Array.isArray(items)
     ? items
       .filter((item) => item && typeof item === 'object')
@@ -1200,10 +1235,21 @@ ipcMain.handle('todos:schedule-reminders', (event, items) => {
         id: String(item.id || '').slice(0, 160),
         text: String(item.text || '').trim().slice(0, 160),
         deadline: String(item.deadline || ''),
+        status: ['waiting', 'followup'].includes(item.status) ? item.status : 'active',
+        followupAt: String(item.followupAt || ''),
+        followupRemindedAt: Math.max(0, Number(item.followupRemindedAt) || 0),
         done: item.done === true,
         remindedAt: Math.max(0, Number(item.remindedAt) || 0),
       }))
       .filter((item) => item.id && item.text)
+      .map((item) => {
+        const previous = previousById.get(item.id);
+        // Preserve fired state across renderer refreshes before its persistence
+        // acknowledgement arrives. Changing a reminder time starts a new event.
+        if (previous?.deadline === item.deadline) item.remindedAt = Math.max(item.remindedAt, previous.remindedAt);
+        if (previous?.followupAt === item.followupAt) item.followupRemindedAt = Math.max(item.followupRemindedAt, previous.followupRemindedAt);
+        return item;
+      })
     : [];
   scheduleNextTodoReminder();
   return { ok: true, count: scheduledTodoReminders.length };
@@ -1690,13 +1736,14 @@ function readAppSettings() {
     features,
     shortcut: isValidPanelShortcut(stored.shortcut) ? stored.shortcut : 'Control+Alt+S',
     clipShortcut: isValidClipboardShortcut(stored.clipShortcut) ? stored.clipShortcut : '',
+    captureShortcut: isValidCaptureShortcut(stored.captureShortcut) ? stored.captureShortcut : 'Control+Alt+Q',
     clipboard: normalizeClipboardPreferences(stored.clipboard, legacyClipboardCapture),
     defaultTab: normalizeDefaultTabPreference(stored.defaultTab, features),
   };
 }
 
 function publicAppSettings() {
-  return { ...readAppSettings(), autoLaunch: isAutoLaunchEnabled() };
+  return { ...readAppSettings(), captureShortcutRegistered: !!captureShortcut && globalShortcut.isRegistered(captureShortcut), autoLaunch: isAutoLaunchEnabled() };
 }
 
 function saveAppSettings(settings) {
@@ -1816,7 +1863,7 @@ function isValidPanelShortcut(shortcut) {
 
 function setPanelShortcut(shortcut) {
   if (!isValidPanelShortcut(shortcut)) return false;
-  if (shortcut === configuredClipShortcut || shortcut === translationShortcut) return false;
+  if (shortcut === configuredClipShortcut || shortcut === translationShortcut || shortcut === captureShortcut) return false;
   if (shortcut === configuredShortcut) {
     if (shortcut === 'Space') return true;
     if (globalShortcut.isRegistered(shortcut)) return true;
@@ -1856,7 +1903,7 @@ function setPanelShortcut(shortcut) {
 }
 
 function setClipboardShortcut(shortcut) {
-  if (!isValidClipboardShortcut(shortcut) || (shortcut && (shortcut === configuredShortcut || shortcut === translationShortcut))) return false;
+  if (!isValidClipboardShortcut(shortcut) || (shortcut && (shortcut === configuredShortcut || shortcut === translationShortcut || shortcut === captureShortcut))) return false;
   const previous = configuredClipShortcut;
   if (!shortcut) {
     if (previous && globalShortcut.isRegistered(previous)) globalShortcut.unregister(previous);
@@ -1878,6 +1925,25 @@ function isValidClipboardShortcut(shortcut) {
   return shortcut === '' || (shortcut !== 'Space' && isValidPanelShortcut(shortcut));
 }
 
+function isValidCaptureShortcut(shortcut) {
+  return isValidClipboardShortcut(shortcut);
+}
+
+function setCaptureShortcut(shortcut) {
+  if (!isValidCaptureShortcut(shortcut)) return false;
+  const previous = captureShortcut;
+  if (shortcut && (shortcut === configuredShortcut || shortcut === configuredClipShortcut || shortcut === translationShortcut)) return false;
+  if (shortcut === previous && (!shortcut || globalShortcut.isRegistered(shortcut))) return true;
+  if (shortcut) {
+    if (globalShortcut.isRegistered(shortcut)) return false;
+    try { if (!globalShortcut.register(shortcut, () => openQuickCapture())) return false; }
+    catch (error) { return false; }
+  }
+  if (previous && previous !== shortcut && globalShortcut.isRegistered(previous)) globalShortcut.unregister(previous);
+  captureShortcut = shortcut;
+  return true;
+}
+
 function applyAppSettings() {
   const settings = readAppSettings();
   applyFeatureServices(settings);
@@ -1892,6 +1958,8 @@ function applyAppSettings() {
     setClipboardShortcut('');
   }
   configureTranslationShortcut(readJsonFile(getJsonSettingsPath('translation-settings.json')).shortcut || '');
+  // 保留用户配置，即便快捷键被其它应用占用，也让设置页说明注册失败并允许修改。
+  setCaptureShortcut(settings.captureShortcut);
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
 }
 
@@ -1911,12 +1979,200 @@ function openRendererPanel(channel) {
   else send();
 }
 
+function isMainRenderer(event) {
+  return !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
+}
+
+function isQuickCaptureRenderer(event) {
+  return !!quickCaptureWindow && !quickCaptureWindow.isDestroyed() && event.sender === quickCaptureWindow.webContents;
+}
+
+// 任务、笔记仍由原窗口操作同一份内存状态和工作区持久化；小窗不读写 localStorage。
+function requestQuickCaptureRenderer(action, text = '', owner = quickCaptureWindow) {
+  return new Promise((resolve) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return resolve({ ok: false, error: 'Slate 尚未准备好，请稍后重试' });
+    const target = mainWindow;
+    const id = `capture-${process.pid}-${++quickCaptureSequence}`;
+    const finish = (result) => {
+      const pending = quickCaptureRequests.get(id);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      quickCaptureRequests.delete(id);
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish({ ok: false, error: '未收到保存确认，请先检查待办或笔记，避免重复保存' }), 15000);
+    timer.unref?.();
+    quickCaptureRequests.set(id, { finish, timer, owner, action });
+    const send = () => {
+      if (target.isDestroyed() || !quickCaptureRequests.has(id)) return finish({ ok: false, error: 'Slate 已关闭' });
+      try { target.webContents.send('quick-capture:request', { id, action, text }); }
+      catch (error) { finish({ ok: false, error: 'Slate 尚未准备好，请稍后重试' }); }
+    };
+    if (target.webContents.isLoadingMainFrame()) target.webContents.once('did-finish-load', send);
+    else send();
+  });
+}
+
+ipcMain.on('quick-capture:response', (event, payload) => {
+  if (!isMainRenderer(event) || !payload || typeof payload.id !== 'string') return;
+  const pending = quickCaptureRequests.get(payload.id);
+  if (pending) pending.finish(payload);
+});
+
+function quickCapturePosition() {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const area = display.workArea;
+  const width = Math.min(600, area.width);
+  const height = Math.min(440, area.height);
+  return { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height };
+}
+
+function openQuickCapture() {
+  if (isQuitting) return { ok: false, error: 'Slate 正在退出' };
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+  const text = String(clipboard.readText() || '');
+  if (quickCaptureWindow && !quickCaptureWindow.isDestroyed()) {
+    const target = quickCaptureWindow;
+    if (target.isMinimized()) target.restore();
+    const position = quickCapturePosition();
+    target.setMinimumSize(Math.min(420, position.width), Math.min(340, position.height));
+    target.setBounds(position);
+    target.show();
+    target.focus();
+    target.webContents.send('quick-capture:clipboard', { text });
+    return { ok: true };
+  }
+  const position = quickCapturePosition();
+  const target = new BrowserWindow({
+    ...position,
+    minWidth: Math.min(420, position.width),
+    minHeight: Math.min(340, position.height),
+    title: 'Slate · 处理剪贴板',
+    frame: false,
+    backgroundColor: '#f4f4f2',
+    show: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'quick-capture-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: true,
+    },
+  });
+  quickCaptureWindow = target;
+  installLocalWebContentsGuards(target.webContents);
+  target.setMenu(null);
+  target.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape') {
+      event.preventDefault();
+      target.webContents.send('quick-capture:escape');
+    }
+  });
+  target.once('ready-to-show', () => {
+    if (!target.isDestroyed()) { target.show(); target.focus(); }
+  });
+  target.on('close', (event) => {
+    if (isQuitting) return;
+    for (const pending of quickCaptureRequests.values()) {
+      if (pending.owner === target && ['note', 'todo', 'prepare'].includes(pending.action)) {
+        event.preventDefault();
+        return;
+      }
+    }
+  });
+  target.on('closed', () => {
+    if (quickCaptureWindow === target) quickCaptureWindow = null;
+    const ownedTranslation = quickCaptureTranslationOwner === target;
+    if (ownedTranslation || (quickCaptureTranslationResident === target && !translationService?.status().busy)) {
+      translationService?.release();
+      quickCaptureTranslationResident = null;
+    }
+    for (const pending of quickCaptureRequests.values()) {
+      if (pending.owner === target) pending.finish({ ok: false, error: '处理窗口已关闭' });
+    }
+  });
+  target.webContents.on('render-process-gone', () => { if (!target.isDestroyed()) target.destroy(); });
+  target.loadFile(path.join(__dirname, 'renderer', 'quick-capture.html'));
+  return { ok: true };
+}
+
+ipcMain.handle('quick-capture:open', (event) => isMainRenderer(event) ? openQuickCapture() : { ok: false, error: 'forbidden' });
+ipcMain.handle('quick-capture:read', async (event) => {
+  if (!isQuickCaptureRenderer(event)) return { ok: false, error: 'forbidden' };
+  const text = String(clipboard.readText() || '');
+  const context = await requestQuickCaptureRenderer('context');
+  return {
+    ok: true, text, theme: context.theme === 'dark' ? 'dark' : 'light',
+    shortcut: readAppSettings().captureShortcut,
+    registered: !!captureShortcut && globalShortcut.isRegistered(captureShortcut),
+    translation: localTranslator().status(),
+  };
+});
+ipcMain.handle('quick-capture:status', (event) => isQuickCaptureRenderer(event)
+  ? { ok: true, ...localTranslator().status() } : { ok: false, error: 'forbidden' });
+ipcMain.handle('quick-capture:perform', async (event, payload) => {
+  if (!isQuickCaptureRenderer(event)) return { ok: false, error: 'forbidden' };
+  const action = payload?.action;
+  const text = typeof payload?.text === 'string' ? payload.text : '';
+  if (!text.trim()) return { ok: false, error: '先复制文字，或在上方直接输入' };
+  if (text.length > 6000) return { ok: false, error: '文字太长，请分段处理（每次最多 6000 字），原文未截断' };
+  if (action === 'note' || action === 'todo') return requestQuickCaptureRenderer(action, text);
+  if (action !== 'translate') return { ok: false, error: '不支持的操作' };
+  const owner = quickCaptureWindow;
+  const service = localTranslator();
+  if (service.status().busy) return { ok: false, error: '已有翻译任务正在运行，请稍后再试' };
+  quickCaptureTranslationOwner = owner;
+  quickCaptureTranslationResident = owner;
+  try { return { ok: true, ...await service.run('translate', text, payload?.source || 'auto') }; }
+  catch (error) { return { ok: false, error: error.message }; }
+  finally { if (quickCaptureTranslationOwner === owner) quickCaptureTranslationOwner = null; }
+});
+ipcMain.handle('quick-capture:copy', (event, text) => {
+  if (!isQuickCaptureRenderer(event)) return { ok: false, error: 'forbidden' };
+  if (typeof text !== 'string' || text.length > 65536) return { ok: false, error: 'invalid' };
+  clipboard.writeText(text);
+  return { ok: true };
+});
+ipcMain.handle('quick-capture:cancel', (event) => {
+  if (!isQuickCaptureRenderer(event)) return { ok: false, error: 'forbidden' };
+  if (quickCaptureTranslationOwner !== quickCaptureWindow) return { ok: false, error: '没有当前窗口的翻译任务' };
+  localTranslator().release();
+  quickCaptureTranslationResident = null;
+  return { ok: true };
+});
+ipcMain.handle('quick-capture:close', (event) => {
+  if (!isQuickCaptureRenderer(event)) return false;
+  quickCaptureWindow.close();
+  return true;
+});
+ipcMain.handle('quick-capture:settings', async (event, text) => {
+  if (!isQuickCaptureRenderer(event)) return { ok: false, error: 'forbidden' };
+  if (typeof text !== 'string' || text.length > 6000) return { ok: false, error: '请保留不超过 6000 字的原文后打开模型设置' };
+  const owner = quickCaptureWindow;
+  const result = await requestQuickCaptureRenderer('prepare', text, owner);
+  if (!result?.ok) return result || { ok: false, error: '暂存原文失败，请稍后重试' };
+  if (quickCaptureWindow !== owner || owner.isDestroyed()) return { ok: false, error: '处理窗口已关闭' };
+  openRendererPanel('app:open-translation-settings');
+  owner.close();
+  return { ok: true };
+});
+
 function refreshTrayMenu() {
   if (!tray) return;
   const autoLaunch = isAutoLaunchEnabled();
   const settings = readAppSettings();
   const featureLabels = { todo: '待办', notes: '笔记', links: '链接', recordings: '录制', credentials: '密钥', clip: '剪贴板' };
   const menu = Menu.buildFromTemplate([
+    {
+      label: '处理剪贴板',
+      accelerator: captureShortcut || undefined,
+      click: () => openQuickCapture(),
+    },
     {
       label: 'API 配置…',
       click: () => openRendererPanel('app:open-api-settings'),
@@ -2038,11 +2294,15 @@ ipcMain.handle('settings:set-auto-launch', (event, enabled) => {
 });
 ipcMain.handle('settings:set-shortcut', (event, accelerator) => {
   if (!isValidPanelShortcut(accelerator)) return { ok: false, error: 'invalid' };
-  if (accelerator === configuredClipShortcut) return { ok: false, error: 'occupied' };
+  if (accelerator === configuredClipShortcut || accelerator === translationShortcut || accelerator === captureShortcut) return { ok: false, error: 'occupied' };
+  const previous = configuredShortcut;
   if (!setPanelShortcut(accelerator)) return { ok: false, error: 'occupied' };
   const next = readAppSettings();
   next.shortcut = accelerator;
-  if (!saveAppSettings(next)) return { ok: false, error: 'save_failed' };
+  if (!saveAppSettings(next)) {
+    setPanelShortcut(previous);
+    return { ok: false, error: 'save_failed' };
+  }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
   refreshTrayMenu();
   return { ok: true, shortcut: accelerator };
@@ -2050,15 +2310,35 @@ ipcMain.handle('settings:set-shortcut', (event, accelerator) => {
 ipcMain.handle('settings:set-clip-shortcut', (event, accelerator) => {
   const value = typeof accelerator === 'string' ? accelerator : '';
   if (!isValidClipboardShortcut(value)) return { ok: false, error: 'invalid' };
-  if (value && value === configuredShortcut) return { ok: false, error: 'occupied' };
+  if (value && (value === configuredShortcut || value === translationShortcut || value === captureShortcut)) return { ok: false, error: 'occupied' };
+  const previous = configuredClipShortcut;
   if (!setClipboardShortcut(value)) return { ok: false, error: 'occupied' };
   const next = readAppSettings();
   next.clipShortcut = value;
-  if (!saveAppSettings(next)) return { ok: false, error: 'save_failed' };
+  if (!saveAppSettings(next)) {
+    setClipboardShortcut(previous);
+    return { ok: false, error: 'save_failed' };
+  }
   configureTranslationShortcut(readJsonFile(getJsonSettingsPath('translation-settings.json')).shortcut || '');
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
   refreshTrayMenu();
   return { ok: true, shortcut: value, settings: publicAppSettings() };
+});
+ipcMain.handle('settings:set-capture-shortcut', (event, accelerator) => {
+  if (!isMainRenderer(event)) return { ok: false, error: 'forbidden' };
+  if (typeof accelerator !== 'string' || !isValidCaptureShortcut(accelerator)) return { ok: false, error: 'invalid' };
+  const previous = captureShortcut;
+  if (!setCaptureShortcut(accelerator)) return { ok: false, error: 'occupied' };
+  const next = readAppSettings();
+  next.captureShortcut = accelerator;
+  if (!saveAppSettings(next)) {
+    setCaptureShortcut(previous);
+    return { ok: false, error: 'save_failed' };
+  }
+  const settings = publicAppSettings();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', settings);
+  refreshTrayMenu();
+  return { ok: true, shortcut: accelerator, settings };
 });
 ipcMain.handle('settings:set-clipboard', (event, patch) => {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { ok: false, error: 'invalid' };
@@ -2100,6 +2380,16 @@ function normalizePortableStorage(storage) {
       }));
     } catch (error) {}
   }
+  try {
+    const journal = JSON.parse(portable['slate-recording-deletions']);
+    if (Array.isArray(journal)) portable['slate-recording-deletions'] = JSON.stringify(journal.map(entry => ({
+      ...entry,
+      items: Array.isArray(entry.items) ? entry.items.map(item => ({
+        ...item,
+        recording: item.recording?.audioPath ? { ...item.recording, audioPath: platformPolicy.portableMediaPath(RECORDINGS_DIR_NAME, item.recording.audioPath) } : item.recording,
+      })) : [],
+    })));
+  } catch (error) {}
   return portable;
 }
 
@@ -3487,7 +3777,7 @@ function ensureRecordingsDir() {
   }
 }
 
-function getSafeRecordingPath(value) {
+function getSafeRecordingPath(value, allowMissing = false) {
   if (typeof value !== 'string' || !value.trim()) return null;
   const directory = path.resolve(getRecordingsDir());
   const resolvedPath = path.isAbsolute(value)
@@ -3499,8 +3789,10 @@ function getSafeRecordingPath(value) {
   }
   try {
     const directoryStat = fs.lstatSync(directory);
-    const fileStat = fs.lstatSync(resolvedPath);
     if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) return null;
+    let fileStat;
+    try { fileStat = fs.lstatSync(resolvedPath); }
+    catch (error) { return allowMissing && error.code === 'ENOENT' ? resolvedPath : null; }
     if (fileStat.isSymbolicLink() || !fileStat.isFile()) return null;
     return resolvedPath;
   } catch (error) {
@@ -3546,13 +3838,13 @@ ipcMain.handle('recordings:read', async (event, audioPath) => {
 });
 
 ipcMain.handle('recordings:delete', async (event, audioPath) => {
-  const safePath = getSafeRecordingPath(audioPath);
+  const safePath = getSafeRecordingPath(audioPath, true);
   if (!safePath) return false;
   try {
     await fs.promises.unlink(safePath);
     return true;
   } catch (error) {
-    return false;
+    return error.code === 'ENOENT';
   }
 });
 
@@ -3956,6 +4248,11 @@ function watchDisplayChanges() {
       if (notificationWindow && !notificationWindow.isDestroyed() && notificationWindow.isVisible()) {
         notificationWindow.setBounds(getTaskNotificationBounds());
       }
+      if (quickCaptureWindow && !quickCaptureWindow.isDestroyed()) {
+        const position = quickCapturePosition();
+        quickCaptureWindow.setMinimumSize(Math.min(420, position.width), Math.min(340, position.height));
+        quickCaptureWindow.setBounds(position);
+      }
     }, 100);
   };
   screen.on('display-added', reposition);
@@ -3994,6 +4291,8 @@ app.on('window-all-closed', () => {});
 app.on('before-quit', () => {
   translationService?.release();
   isQuitting = true;
+  if (quickCaptureWindow && !quickCaptureWindow.isDestroyed()) quickCaptureWindow.destroy();
+  for (const pending of quickCaptureRequests.values()) pending.finish({ ok: false, error: 'Slate 正在退出' });
   hideWhenCollapsed = false;
 });
 

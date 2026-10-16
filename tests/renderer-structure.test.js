@@ -37,11 +37,21 @@ test('notes have a dedicated top-level tab and management panel', () => {
   assert.match(html, /id="notes-detail"/);
 });
 
-test('home scratch note keeps only the save action', () => {
+test('home capture separates tasks from an immediately editable autosaved note', () => {
   const homeNote = html.match(/<section class="tile home-note"[\s\S]*?<\/section>/)?.[0] || '';
-  assert.match(homeNote, /id="note-save-btn"/);
+  assert.match(homeNote, /id="home-note"/);
+  assert.match(homeNote, /id="home-note-new"/);
+  assert.match(homeNote, /id="home-note-save-state"/);
+  assert.doesNotMatch(homeNote, /id="(?:note-save-btn|note-edit-btn|home-note-tools|note-format-actions)"/);
+  assert.doesNotMatch(homeNote, /id="home-task-input"/);
   assert.doesNotMatch(homeNote, /id="note-library-btn"/);
   assert.doesNotMatch(homeNote, /id="note-library"/);
+  const tasks = html.match(/<section[^>]*data-home-module="tasks"[\s\S]*?<\/section>/)?.[0] || '';
+  assert.match(tasks, /id="home-task-input"/);
+  assert.match(tasks, /id="home-focus-list"/);
+  assert.match(tasks, /id="home-focus-summary"/);
+  assert.match(tasks, /id="home-task-progress"/);
+  assert.doesNotMatch(tasks, /id="home-note"/);
 });
 
 test('recordings expose in-page API settings and create a live draft while recording', () => {
@@ -71,11 +81,21 @@ test('settings exposes exactly one switch for every homepage widget', () => {
   const switches = [...html.matchAll(/data-settings-home-module="([^"]+)"/g)]
     .map((match) => match[1]);
   assert.deepEqual(switches, [
-    'launcher', 'recorder', 'windows', 'note', 'translation',
+    'launcher', 'windows', 'tasks', 'note', 'translation',
   ]);
   assert.match(workspaceJs, /isRecordingActive/);
-  assert.match(workspaceJs, /recording_active/);
   assert.match(workspaceJs, /at_least_one_required/);
+});
+
+test('quick recording stays in the topbar rather than taking a homepage tile', () => {
+  const quickRecorder = html.match(/<header class="topbar"[\s\S]*?<\/header>/)?.[0] || '';
+  assert.match(quickRecorder, /id="quick-recorder"/);
+  assert.match(quickRecorder, /id="record-start"/);
+  assert.match(quickRecorder, /id="record-pause"/);
+  assert.match(quickRecorder, /id="record-stop"/);
+  assert.match(quickRecorder, /id="record-open-library"/);
+  assert.doesNotMatch(html, /data-home-module="recorder"|data-settings-home-module="recorder"/);
+  assert.doesNotMatch(html, /id="recording-strands"/);
 });
 
 test('settings exposes every panel tab as a possible default opening page', () => {
@@ -90,7 +110,6 @@ test('settings exposes every panel tab as a possible default opening page', () =
 test('hidden visual widgets stop presentation-only background work', () => {
   assert.match(effectsJs, /setEnabled/);
   assert.match(effectsJs, /slate:home-modules-changed/);
-  assert.match(workspaceJs, /SlateHome\?\.isVisible/);
 });
 
 // 样式表只能服务于真实存在的界面：任何类选择器都必须能在渲染层源码里找到出处。

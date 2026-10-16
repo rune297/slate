@@ -8,6 +8,11 @@ function subscribe(channel, handler) {
 }
 
 contextBridge.exposeInMainWorld('slateAPI', {
+  openQuickCapture: () => ipcRenderer.invoke('quick-capture:open'),
+  setCaptureShortcut: value => ipcRenderer.invoke('settings:set-capture-shortcut', value),
+  onQuickCaptureRequest: cb => subscribe('quick-capture:request', (_event, payload) => cb(payload)),
+  replyQuickCapture: payload => ipcRenderer.send('quick-capture:response', payload),
+  onOpenTranslationSettings: cb => subscribe('app:open-translation-settings', () => cb()),
   translationStatus: () => ipcRenderer.invoke('translation:status'),
   translationClipboard: () => ipcRenderer.invoke('translation:clipboard'),
   translateLocal: payload => ipcRenderer.invoke('translation:run',payload),

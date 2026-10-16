@@ -1,0 +1,42 @@
+/* Slate's three stone tones are sampled from build/slate-icon.png.
+   Shared by the workspace, quick capture and desktop notifications. */
+:root {
+  --slate-stone-dark: #3b3833;
+  --slate-stone: #524e47;
+  --slate-stone-light: #6a655b;
+  --slate-paper: #f4f2ee;
+  --brand-canvas: var(--slate-paper);
+  --brand-surface: #ffffff;
+  --brand-surface-raised: #f6f4ef;
+  --brand-surface-inset: #fbfaf7;
+  --brand-surface-hover: #e9e6df;
+  --brand-control-border: #d9d6cf;
+  --brand-text: #26241f;
+  --brand-text-secondary: #57544c;
+  --brand-text-muted: #706b60;
+  --brand-text-subtle: #777166;
+  --brand-accent: var(--slate-stone);
+  --brand-accent-rgb: 82, 78, 71;
+  --brand-focus: var(--slate-stone-light);
+  --brand-selected: var(--slate-stone-dark);
+  --brand-selected-text: #ffffff;
+  --brand-toggle: var(--slate-stone-light);
+}
+
+:root[data-theme='dark'] {
+  --brand-canvas: var(--slate-stone-dark);
+  --brand-surface: #4a463f;
+  --brand-surface-raised: var(--slate-stone);
+  --brand-surface-inset: #423e38;
+  --brand-surface-hover: #59544c;
+  --brand-control-border: #80786b;
+  --brand-text: #f5f2ec;
+  --brand-text-secondary: #e1dbd0;
+  --brand-text-muted: #ded8ce;
+  --brand-text-subtle: #d6d0c4;
+  --brand-accent: #ede6d8;
+  --brand-accent-rgb: 237, 230, 216;
+  --brand-focus: #ede6d8;
+  --brand-selected: #ede6d8;
+  --brand-selected-text: var(--slate-stone-dark);
+}
