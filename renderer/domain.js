@@ -569,6 +569,18 @@
     return tabs[0] || 'home';
   }
 
+  function normalizeNoteAttachments(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set(), formats = {png:'image/png',jpg:'image/jpeg',webp:'image/webp',gif:'image/gif',bmp:'image/bmp'};
+    return value.flatMap(item => {
+      if (!item || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(item.id) || seen.has(item.id)) return [];
+      if (!Object.keys(formats).some(ext => item.relativePath === `todo-images/${item.id}.${ext}` && item.mime === formats[ext])) return [];
+      if (!Number.isInteger(item.size) || item.size < 1 || item.size > 10*1024*1024 || !Number.isInteger(item.width) || !Number.isInteger(item.height) || item.width < 1 || item.height < 1 || item.width*item.height > 20000000) return [];
+      seen.add(item.id);
+      return [{id:item.id,name:String(item.name || '图片').replace(/[\x00-\x1f\x7f/\\]/g,'_').slice(0,128),relativePath:item.relativePath,mime:item.mime,size:item.size,width:item.width,height:item.height}];
+    }).slice(0,8);
+  }
+
   function normalizeNoteArchive(value) {
     if (!Array.isArray(value)) return [];
     return value
@@ -581,7 +593,8 @@
         const titleSource = ['model', 'user'].includes(item.titleSource) ? item.titleSource : '';
         const createdAt = Math.max(0, Number(item.createdAt) || Date.now());
         const updatedAt = Math.max(createdAt, Number(item.updatedAt) || createdAt);
-        return { id, title, titleSource, content, createdAt, updatedAt };
+          const attachments = normalizeNoteAttachments(item.attachments);
+          return { id, title, titleSource, content, createdAt, updatedAt, ...(attachments.length ? { attachments } : {}) };
       })
       .filter(Boolean)
       .sort((left, right) => right.updatedAt - left.updatedAt);
@@ -1082,6 +1095,7 @@
     visiblePanelTabs,
     resolveDefaultPanelTab,
     normalizeNoteArchive,
+    normalizeNoteAttachments,
     filterNotes,
     updateNoteInArchive,
     updateNoteTitle,

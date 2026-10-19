@@ -25,8 +25,8 @@
     if(!done) {
       const actions=document.createElement('div');actions.className='home-focus-actions';
       const focused=Workflow.isFocus(item),index=focusIds.indexOf(item.id);
-      const focus=document.createElement('button');focus.type='button';focus.dataset.workAction='focus';focus.textContent=focused?'重点':'先做';
-      focus.title=focused?'取消今日重点':'设为今日重点，插到列表最前';focus.setAttribute('aria-pressed',String(focused));
+      const focus=document.createElement('button');focus.type='button';focus.dataset.workAction='focus';focus.textContent=focused?'今日优先':'优先做';
+      focus.title=focused?'取消今日优先，任务仍保留':'置顶到首页今天，今天优先做；不改变日期和截止时间';focus.setAttribute('aria-pressed',String(focused));
       focus.className='home-focus-priority';row.append(focus);
       if(focused)actions.append(button('up','提前执行',index===0),button('down','稍后执行',index===focusIds.length-1));
       actions.append(button('reschedule','安排到其他日期'));row.append(actions);

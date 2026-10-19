@@ -1,0 +1,8 @@
+(()=>{
+  const api=window.slateAPI,card=document.querySelector('.settings-clipboard-card');if(!card||!api?.getCopyFeedbackStatus||!api?.setCopyFeedbackTheme)return;
+  const row=document.createElement('div');row.className='settings-device-row';row.innerHTML='<div><span>桌面复制提示</span><small>复制后在左下角提示，连续复制显示次数；不保存历史。</small><small id="copy-feedback-status"></small></div><label class="settings-compact-toggle"><span>开启</span><input id="settings-copy-feedback" type="checkbox" aria-label="开启桌面复制成功提示"><i aria-hidden="true"></i></label>';card.append(row);
+  const input=document.getElementById('settings-copy-feedback'),note=document.getElementById('copy-feedback-status');let busy=false;
+  async function refresh(){if(busy)return;try{const config=await api.getAppSettings(),state=await api.getCopyFeedbackStatus();input.checked=config.clipboard?.feedbackEnabled!==false;input.disabled=!state.supported;note.textContent=!state.supported?'仅 Windows 支持':!input.checked?'已关闭':state.running?'事件监听已运行':'正在启动监听；若未生效，可关闭后重新开启。';}catch{note.textContent='无法读取状态，请稍后重试';}}
+  input.onchange=async()=>{if(busy)return;busy=true;input.disabled=true;const enabled=input.checked;try{const result=await api.setClipboardPreferences({feedbackEnabled:enabled});if(!result?.ok)throw Error();note.textContent=enabled?'已开启复制提示，不影响历史采集开关。':'已关闭复制提示。';}catch{input.checked=!enabled;note.textContent='未能保存，原设置保留，请重试';}finally{busy=false;input.disabled=false;}};
+  function theme(){api.setCopyFeedbackTheme(document.documentElement.dataset.theme||'light').catch(()=>{});}new MutationObserver(theme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});theme();refresh();document.addEventListener('slate:tabchange',event=>{if(event.detail.tab==='settings')refresh();});
+})();

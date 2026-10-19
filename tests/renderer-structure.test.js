@@ -20,7 +20,7 @@ test('expanded hotzone captures a stationary outside press and keeps the panel a
   assert.match(mainJs, /ipcMain\.on\('dismiss:press'/);
   assert.match(mainJs, /hotzoneWindow\.setIgnoreMouseEvents\(false\)/);
   assert.match(mainJs, /mainWindow\.moveTop\(\)/);
-  assert.match(mainJs, /function handleDismissPress\(payload\)/);
+  assert.match(mainJs, /function handleDismissPress\([^)]*\)/);
 });
 
 test('clipboard toolbar exposes an instant text and URL search field', () => {

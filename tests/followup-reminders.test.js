@@ -25,6 +25,10 @@ function scheduler(now = instant) {
     TODO_REMINDER_LEAD_MS: hour,
     todoReminderTimer: null,
     scheduledTodoReminders: [],
+    // Exercise the legacy fallback; v1.5's registered service is tested by the
+    // dedicated reminder unit and production Electron integration suites.
+    todoRemindersV15: null,
+    isMainRenderer: () => true,
     setTimeout(callback, delay) { const id = ++timerSequence; timers.set(id, { callback, delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
     enqueueTaskNotification(item) { notifications.push(item); },

@@ -1,0 +1,11 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),{spawnSync}=require('node:child_process');
+if(process.platform!=='win32')process.exit(0);
+const root=path.join(__dirname,'..'),source=path.join(root,'native','ClipboardObserver.cs'),output=path.join(root,'build','native','slate-clipboard-observer.exe');
+if(fs.existsSync(output)&&fs.statSync(output).mtimeMs>=fs.statSync(source).mtimeMs)process.exit(0);
+const compiler=path.join(process.env.SystemRoot||'C:\\Windows','Microsoft.NET','Framework64','v4.0.30319','csc.exe');
+if(!fs.existsSync(compiler))throw Error('Windows .NET Framework C# compiler was not found.');
+fs.mkdirSync(path.dirname(output),{recursive:true});
+const result=spawnSync(compiler,['/nologo','/target:exe','/optimize+','/platform:x64','/reference:System.Windows.Forms.dll','/reference:System.Web.Extensions.dll','/out:'+output,source],{stdio:'inherit',windowsHide:true});
+if(result.status!==0)process.exit(result.status||1);
+console.log('Built event-driven clipboard observer.');

@@ -373,6 +373,7 @@ test('clipboard privacy settings normalize retention and ignored applications', 
     pausedUntil: 123,
     retentionDays: 30,
     ignoredApps: ['1Password', 'KeePass'],
+    feedbackEnabled:true,
   });
   assert.equal(normalizeClipboardPreferences(null, true).captureEnabled, true);
   assert.equal(normalizeClipboardPreferences({ retentionDays: 999 }).retentionDays, 7);
@@ -389,6 +390,20 @@ test('backup export keeps durable content and excludes sensitive or bulky histor
     'slate-todo-data': '{"P0":[]}',
     'slate-home-commands': '[]',
   });
+});
+
+test('backup validation rejects oversized durable fields instead of silently dropping them',()=>{
+  const limit=8*1024*1024;
+  assert.equal(sanitizeBackupStorage({'slate-reports-v1':'a'.repeat(limit)})['slate-reports-v1'].length,limit);
+  assert.throws(()=>sanitizeBackupStorage({'slate-todo-data':'{"P3":[]}','slate-reports-v1':'a'.repeat(limit+1)}),/超过 8 MB/);
+  assert.throws(()=>sanitizeBackupStorage({'slate-note-archive-v1':'中'.repeat(Math.ceil(limit/3))}),/超过 8 MB/,'limits are UTF-8 bytes rather than JavaScript character count');
+});
+
+test('backup validation rejects non-string known fields but keeps unknown sensitive keys excluded',()=>{
+  for(const value of [null,{},[],1,true])assert.throws(()=>sanitizeBackupStorage({'slate-todo-data':value}),/数据格式无效/);
+  assert.deepEqual(sanitizeBackupStorage({'slate-credentials':{secret:'not exported'},'slate-todo-data':'{"P3":[]}'}),{'slate-todo-data':'{"P3":[]}'});
+  const durable={'slate-recurring-tasks-v1':'[]','slate-reports-v1':'[]','slate-report-template-v1':'本周完成：','slate-report-template-mode-v1':'custom','slate-report-draft-v1':'{"title":"草稿","content":"未归档正文"}'};
+  assert.deepEqual(sanitizeBackupStorage(durable),durable,'recurrence and report history/template are durable backup fields');
 });
 
 test('enabling clipboard history baselines existing text and image without recording either', () => {

@@ -1,5 +1,6 @@
 .DS_Store
 node_modules/
+build/native/
 dist/
 dist.noindex/
 *.log
@@ -15,6 +16,19 @@ coverage/
 data/
 userdata/
 recordings/
+todo-images/
+task-attachments/
+note-attachments/
+clipboard-images/
+Local State
+Local Storage/
+Preferences
+workspace.json
+workspace-settings.json
+app-settings.json
+report-settings.json
+transcription-settings.json
+ai-services.json
 *.vault.json
 credentials.vault.json
 dismiss-debug.log

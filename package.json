@@ -1,17 +1,17 @@
 {
   "name": "slate",
-  "version": "1.4.0-beta.8",
-  "description": "Slate - a lightweight desktop workspace that pulls down from the top edge",
+  "version": "1.5.0",
+  "description": "Slate - a Windows desktop workspace for tasks, notes, clipboard tools and configurable AI",
   "main": "main.js",
   "author": "Rune",
   "license": "MIT",
-  "homepage": "https://github.com/chenxiangrun297-svg/slate",
+  "homepage": "https://github.com/rune297/slate",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chenxiangrun297-svg/slate.git"
+    "url": "git+https://github.com/rune297/slate.git"
   },
   "bugs": {
-    "url": "https://github.com/chenxiangrun297-svg/slate/issues"
+    "url": "https://github.com/rune297/slate/issues"
   },
   "keywords": [
     "electron",
@@ -21,6 +21,11 @@
     "workspace"
   ],
   "scripts": {
+    "pretest":"node scripts/build-native.js",
+    "prestart":"node scripts/build-native.js",
+    "prebuild":"node scripts/build-native.js",
+    "prebuild:win":"node scripts/build-native.js",
+    "prepack":"node scripts/build-native.js",
     "test": "node scripts/test-desktop.js",
     "start": "electron .",
     "build": "electron-builder --win nsis --x64 --publish never",
@@ -37,6 +42,7 @@
     "artifactName": "slate-${version}-${arch}.${ext}",
     "copyright": "© 2026 Rune",
     "asar": true,
+    "extraResources":[{"from":"build/native/slate-clipboard-observer.exe","to":"native/slate-clipboard-observer.exe"}],
     "electronLanguages": [
       "zh-CN",
       "en-US"
@@ -50,6 +56,17 @@
       "main-services.js",
       "translation-service.cjs",
       "translation-worker.cjs",
+      "todo-reminders.cjs",
+      "todo-attachments.cjs",
+      "report-service.cjs",
+      "ai-provider-service.cjs",
+      "ai-catalog.cjs",
+      "ai-chat.cjs",
+      "ai-hub-service.cjs",
+      "prompt-optimizer.cjs",
+      "copy-feedback.cjs",
+      "copy-feedback-preload.js",
+      "todo-reminder-preload.js",
       "platform.js",
       "hotzone.html",
       "build/slate-icon.png",

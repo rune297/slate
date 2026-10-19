@@ -1,0 +1,13 @@
+.todo-plan-fields { align-items: end; gap: 12px; }
+.todo-plan-fields label { display: flex; flex-direction: column; gap: 6px; }
+.todo-work-details .todo-plan-fields select,
+.todo-work-details .todo-plan-fields input { min-height: 34px; font-size: 12px; }
+.todo-plan-date-label[hidden] { display: none; }
+.todo-extra-options { border-top: 1px solid var(--border-soft); padding-top: 8px; }
+.todo-extra-options > summary { cursor: pointer; color: var(--text-3); font-size: 12px; padding: 4px 0; }
+.todo-extra-fields { display: flex; flex-direction: column; gap: 12px; padding: 10px 0 4px; }
+.todo-extra-fields .todo-work-fields { flex-wrap: wrap; }
+.todo-work-details > label { font-size: 12px; color: var(--text-3); }
+.todo-work-details textarea { font-size: 13px; line-height: 1.6; }
+.todo-work-details .todo-work-detail-actions { align-items: center; gap: 12px; }
+.todo-work-details .todo-work-detail-actions button { min-height: 32px; }

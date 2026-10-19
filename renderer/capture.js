@@ -123,6 +123,7 @@ window.slateAPI?.onQuickCaptureRequest?.(async request => {
 window.slateAPI?.onOpenTranslationSettings?.(async () => {
   if (!isExpanded) await setMode(true);
   await setActiveTab('settings');
+  window.SlateSettingsNavigation?.activate('translation');
   const setup = document.getElementById('translation-setup');
   setup?.scrollIntoView({ block: 'center' });
   document.getElementById('translation-install')?.focus({ preventScroll: true });

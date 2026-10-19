@@ -1,0 +1,39 @@
+#slate { touch-action: none; user-select: none; cursor: ns-resize; }
+#app.expanded .slate {
+  top: calc(100% - 24px);
+  width: 100%;
+  height: 24px;
+  padding: 0 0 5px;
+  align-items: flex-end;
+  background: transparent;
+  pointer-events: auto;
+  border-radius: 0;
+  transition: none;
+}
+#app.expanded .panel { padding-bottom: max(28px, var(--s-4)); }
+#app.expanded .slate-dot { width: 36px; height: 3px; background: var(--text-3); opacity: .8; }
+#app.expanded .slate:hover .slate-dot,
+#app.expanded .slate:focus-visible .slate-dot { background: var(--text-1); opacity: 1; }
+#app.expanded .slate:focus-visible .slate-dot { outline: 2px solid var(--brand-focus); outline-offset: 2px; }
+#app.pulling { transform:translate3d(0,var(--pull-translate,-100vh),0);will-change:transform; }
+#app.pulling .panel {
+  transform: translateY(0);
+  opacity: 0;
+  clip-path: none;
+  transition: none;
+  pointer-events: none;
+  overflow: visible;
+}
+/* The sheet may stretch down by <32px. Extend its own surface above the
+   viewport so the top stays attached while every control still moves together. */
+#app.pulling .panel::before { top: -32px; }
+#app.pulling.pull-ready .panel { opacity: 1; }
+#app.pulling .slate {
+  top: calc(100% - 6px);
+  transition: none;
+  cursor: grabbing;
+  opacity: 0;
+  height: 6px;
+  width: 96px;
+}
+#app.pulling.pull-ready .slate { opacity: 1; }

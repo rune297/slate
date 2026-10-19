@@ -1,0 +1,25 @@
+/* Shared, readable form sizing for task details and image notes. */
+.todo-work-details { font-size: 14px; line-height: 1.6; }
+.todo-work-details :is(input,textarea,select,button,summary),
+.task-image-label, .note-images { font-size: 14px; }
+.todo-work-details label,.todo-work-details .todo-plan-fields :is(select,input),
+.todo-work-details .todo-extra-options > summary,.todo-work-details .todo-extra-fields label { font-size:14px;line-height:1.6; }
+.todo-work-details :is(.todo-work-fields select,.todo-work-fields input) { font-size:14px; }
+.todo-work-details .todo-work-detail-actions button { font-size:14px;min-height:36px; }
+.todo-details-toggle { font-size:12px;min-height:32px; }
+.todo-work-details :is(input,select) { min-height: 36px; }
+.todo-work-details textarea { min-height: 96px; line-height: 1.6; }
+.todo-work-detail-actions > span,
+.task-image-hint, .task-image-status, .task-image-count,
+.task-image-item figcaption { font-size: 13px; line-height: 1.6; }
+.task-image-add, .task-image-remove { font-size: 13px !important; min-height: 32px; }
+.translation-model-info { display: grid; gap: 8px; margin: 14px 0; font-size: 14px; }
+.translation-model-info p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--brand-text-secondary); }
+#todo-list .todo-cat-chip { max-width: 180px;font-size:12px;min-height:28px; }
+.settings-samples p { font-size:13px;line-height:1.7;color:var(--text-2); }
+.settings-samples .settings-actions { display:flex;flex-wrap:wrap;gap:8px; }
+#settings-todo-reminders .settings-card-heading { display:grid;grid-template-columns:minmax(0,1fr) 176px;gap:16px; }
+#settings-todo-reminders .settings-device-row { grid-template-columns:minmax(0,1fr) 176px; }
+#settings-todo-reminders .settings-compact-toggle { width:auto;justify-self:end;justify-content:flex-end; }
+#settings-todo-reminders input[type='time'] { width:176px;justify-self:end; }
+@media(max-width:700px){#settings-todo-reminders .settings-card-heading,#settings-todo-reminders .settings-device-row{grid-template-columns:minmax(0,1fr) 128px}#settings-todo-reminders input[type='time']{width:128px}}

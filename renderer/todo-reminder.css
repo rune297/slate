@@ -1,0 +1,39 @@
+:root { color-scheme: light; font-family: 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei UI', sans-serif; color: var(--brand-text); background: var(--brand-canvas); font-size: 12px; --reminder-attention: #775a29; }
+:root[data-theme='dark'] { color-scheme: dark; --reminder-attention: #e5c891; }
+* { box-sizing: border-box; }
+body { margin: 0; visibility: hidden; overflow: hidden; }
+body.ready { visibility: visible; }
+button, input { font: inherit; color: inherit; }
+button { min-height: 32px; padding: 0 12px; border: 1px solid var(--brand-control-border); border-radius: 9px; background: var(--brand-surface-raised); cursor: pointer; }
+button:hover:not(:disabled) { background: var(--brand-surface-hover); }
+button:disabled { cursor: default; opacity: .5; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--brand-focus); outline-offset: 2px; }
+button.primary { background: var(--brand-selected); color: var(--brand-selected-text); border-color: transparent; }
+button.primary:hover:not(:disabled) { opacity: .9; background: var(--brand-selected); }
+.text-button { border: 0; background: transparent; padding: 0; color: var(--brand-text-secondary); }
+.text-button:hover:not(:disabled) { background: transparent; color: var(--brand-text); text-decoration: underline; text-underline-offset: 3px; }
+header { height: 44px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--brand-control-border); -webkit-app-region: drag; }
+h1 { font-size: 13px; font-weight: 600; margin: 0; }
+.icon-button { width: 32px; padding: 7px; border: 0; background: transparent; -webkit-app-region: no-drag; }
+.icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+main { padding: 14px 16px; max-height: calc(100vh - 44px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--brand-control-border) transparent; }
+.task-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--reminder-attention); font-size: 12px; line-height: 1.5; }
+#reminder-count { color: var(--brand-text-muted); font-variant-numeric: tabular-nums; }
+h2 { margin: 8px 0 6px; max-height: 72px; overflow-y: auto; overflow-wrap: anywhere; font-size: 15px; line-height: 1.55; font-weight: 600; scrollbar-width: thin; scrollbar-color: var(--brand-control-border) transparent; }
+#reminder-time { margin: 0; color: var(--brand-text-secondary); line-height: 1.6; font-variant-numeric: tabular-nums; }
+#reminder-view { margin-top: 2px; min-height: 26px; font-size: 11px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
+.actions button { padding: 0 8px; }
+.pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.pagination.single { justify-content: flex-start; }
+.pagination span { color: var(--brand-text-muted); font-size: 11px; line-height: 1.5; text-align: center; }
+.pagination button { flex: 0 0 auto; font-size: 11px; }
+#reminder-feedback { margin: 8px 0 0; color: var(--reminder-attention); font-size: 11px; line-height: 1.6; }
+#reminder-feedback:empty { display: none; }
+#reminder-reschedule-fields { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 14px; }
+#reminder-reschedule-fields label { grid-column: 1 / -1; color: var(--brand-text-secondary); }
+#reminder-reschedule-fields input { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--brand-control-border); border-radius: 9px; padding: 0 8px; background: var(--brand-surface-inset); }
+.reminder-edit-row { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--brand-text-muted); }
+.reminder-edit-row button { font-size: 11px; min-height: 28px; padding: 0 8px; }
+[hidden] { display: none !important; }
+::selection { background: var(--brand-selected); color: var(--brand-selected-text); }

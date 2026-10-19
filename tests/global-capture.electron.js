@@ -195,7 +195,7 @@ if (!stage) {
         const initialArchiveId = await evaluate(main, "localStorage.getItem('slate-note-active-archive-v1')");
 
         await evaluate(main, "setMode(true); setPanelPinned(true); setActiveTab('todo'); window.SlateTasks.add('Existing editable task', { period: 'day', notes: 'Persisted original notes' }); true");
-        await waitFor(() => evaluate(main, "document.getElementById('app').classList.contains('expanded')"), 'task editing fixture panel');
+        await waitFor(() => evaluate(main, "document.getElementById('app').classList.contains('expanded') && !modeBusy"), 'task editing fixture panel after slide');
         main.show(); main.focus(); main.webContents.focus();
         const draftTask = (await tasks()).find((item) => item.text === 'Existing editable task');
         const draftRow = `#todo-list [data-id="${draftTask.id}"]`;
@@ -439,6 +439,7 @@ if (!stage) {
         await evaluate(main, 'setPanelPinned(true)');
         main.show(); main.focus(); main.webContents.focus();
         assert.equal((await setShortcut('Control+Alt+M')).ok, true);
+        await click(main, '#settings-menu-shortcuts');
         await evaluate(main, "document.getElementById('settings-capture-shortcut-change').scrollIntoView({ block: 'center' }); true");
         await click(main, '#settings-capture-shortcut-change');
         await waitFor(() => evaluate(main, "!document.getElementById('shortcut-recorder').hidden && document.activeElement.id === 'shortcut-recorder'"), 'focused custom processing shortcut recorder');

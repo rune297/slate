@@ -22,13 +22,19 @@
   async function refresh() {
     if (!api?.translationStatus) return;
     const state=await api.translationStatus(); installed=state.installed;
-    el('setup').hidden=installed;
+    el('setup').hidden=false;
+    el('install').hidden=installed;
+    el('import').textContent=installed?'重新导入模型':'导入本地模型';
+    el('model-state').textContent=installed?'M2M100 · 已准备好，可以离线翻译':'尚未准备离线翻译模型';
+    el('model-runtime').textContent=state.busy?'正在翻译中；原文与译文均在本机处理。':state.loaded?'模型已加载到内存，空闲后会自动释放。':installed?'模型保存在本机，使用时才加载；当前不占用模型内存。':'首次下载或导入一次，此后无需联网；在首页直接翻译文字。';
+    el('unload').disabled=!state.loaded||state.busy;
     showPreparation();
     el('shortcut').textContent=state.shortcut || '设置快捷键';
     if (!installed && !busy) status('首次需准备离线模型，此后文字仅在本机翻译');
     return state;
   }
   async function run() {
+    window.SlateLanguageTool?.select('translation');
     if (busy) return;
     if (!installed) { showPreparation(); status('原文已保留，点击「准备离线翻译」下载或导入模型'); return; }
     const text=el('input').value.trim();
@@ -66,8 +72,10 @@
   };
   el('import').onclick=async()=> { lock(true); try { const result=await api.importTranslation(); if(result.cancelled) return; if(!result.ok) throw new Error(result.error); await refresh(); status('本地模型已准备好'); } catch(error) { status(error.message); } finally {lock(false);} };
   lock(false);
+  el('check').onclick=()=>refresh().catch(()=>status('无法读取模型状态，请重试'));
+  el('unload').onclick=async()=>{if(busy)return;try{await api.releaseTranslation();await refresh();status('已释放模型内存，模型文件仍保留在本机');}catch(error){status(`释放失败：${error.message}`);}};
   refresh().catch(()=>status('无法读取模型状态，请稍后重试'));
-  if (el('prepare')) el('prepare').onclick=async()=> { await setActiveTab('settings'); el('setup').scrollIntoView({block:'nearest'}); el('install').focus({preventScroll:true}); };
+  if (el('prepare')) el('prepare').onclick=async()=> { await setActiveTab('settings'); window.SlateSettingsNavigation?.activate('translation'); el('setup').scrollIntoView({block:'nearest'}); el('install').focus({preventScroll:true}); };
   el('release').onclick=async()=> {
     ++generation;
     try { await api.releaseTranslation(); status('已取消，原文保留，可重新翻译'); }
@@ -123,8 +131,9 @@
       } catch(error) { status(`无法开始翻译：${error.message}，原文未处理`); return false; }
     }
   };
-  api?.onOpenTranslation?.(async()=> { window.SlateHome?.setModuleVisible('translation',true); await setActiveTab('home'); if(!isExpanded) await setMode(true); await refresh(); await paste(true); });
+  api?.onOpenTranslation?.(async()=> { window.SlateLanguageTool?.select('translation');window.SlateHome?.setModuleVisible('translation',true); await setActiveTab('home'); if(!isExpanded) await setMode(true); await refresh(); await paste(true); });
   api?.onTranslationEvent?.(event=> {
+    if(event.type==='status') refresh().catch(()=>{});
     if(!busy) return;
     if(event.type==='progress') status(`准备模型：${event.progress.file || ''}${event.progress.progress ? ' '+Math.round(event.progress.progress)+'%' : ''}`);
     if(event.type==='segment') status(`正在本地翻译 ${event.completed}/${event.total} 段`);

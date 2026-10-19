@@ -358,6 +358,7 @@ function normalizeClipboardPreferences(value, legacyCaptureEnabled = false) {
     pausedUntil: Math.max(0, Number(source.pausedUntil) || 0),
     retentionDays,
     ignoredApps,
+    feedbackEnabled:source.feedbackEnabled!==false,
   };
 }
 
@@ -381,6 +382,14 @@ const BACKUP_STORAGE_KEYS = new Set([
   'slate-todo-data',
   'slate-todo-category-names-v1',
   'slate-todo-categories-v2',
+  'slate-recurring-tasks-v1',
+  'slate-reports-v1',
+  'slate-report-template-v1',
+  'slate-report-template-mode-v1',
+  'slate-report-profiles-v2',
+  'slate-report-draft-v1',
+  'slate-prompt-draft-v1',
+  'slate-home-language-tool-v1',
   'slate-home-note',
   'slate-note-archive-v1',
   'slate-note-active-archive-v1',
@@ -397,8 +406,9 @@ function sanitizeBackupStorage(storage) {
   const source = storage && typeof storage === 'object' && !Array.isArray(storage) ? storage : {};
   const safe = {};
   for (const [key, value] of Object.entries(source)) {
-    if (!BACKUP_STORAGE_KEYS.has(key) || typeof value !== 'string') continue;
-    if (Buffer.byteLength(value, 'utf8') > 2 * 1024 * 1024) continue;
+    if (!BACKUP_STORAGE_KEYS.has(key)) continue;
+    if (typeof value !== 'string') throw new Error('备份中有一类数据格式无效，未导入或导出；请使用 Slate 重新生成备份');
+    if (Buffer.byteLength(value, 'utf8') > 8 * 1024 * 1024) throw new Error('备份中有一类数据超过 8 MB，未导入或导出；请先减少历史数据后重试');
     safe[key] = value;
   }
   return safe;

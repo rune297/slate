@@ -94,6 +94,7 @@
       // Migration never invents when an older task was added to its plan.
       planAddedAt: positiveNumber(item.planAddedAt),
       notes,
+      support:String(item.support||'').slice(0,2000),
       estimateMinutes: ESTIMATES.has(estimate) ? estimate : 0,
     };
   }
@@ -106,6 +107,10 @@
     const item = normalizeTodo(todo, now);
     const planDate = kind === 'day' ? (selectedDate || dateKey(now)) : '';
     const planWeek = kind === 'week' ? weekKey(selectedDate || now) : '';
+    const planHistory = Array.isArray(item.planHistory) ? [...item.planHistory] : [];
+    if (item.planKind !== kind || item.planDate !== planDate || item.planWeek !== planWeek) {
+      planHistory.push({fromKind:item.planKind,fromDate:item.planDate,fromWeek:item.planWeek,toKind:kind,toDate:planDate,toWeek:planWeek,changedAt:currentTime});
+    }
     // A focus for another day is stale; moving an item away from today's plan
     // must also remove its current focus, otherwise it would stay in Today.
     const keepFocus = kind === 'day' && planDate === dateKey(now) && item.focusDate === dateKey(now);
@@ -115,6 +120,7 @@
       planDate,
       planWeek,
       planAddedAt: positiveNumber(currentTime),
+      planHistory,
       focusDate: keepFocus ? item.focusDate : '',
       focusOrder: keepFocus ? item.focusOrder : 0,
       pinnedToday: item.done !== true && keepFocus,

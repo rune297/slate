@@ -1,0 +1,35 @@
+.task-images { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--brand-control-border); }
+.task-image-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.task-image-label { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; color: var(--brand-text); }
+.task-image-count { color: var(--brand-text-secondary); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.task-images button, .task-image-viewer button { appearance: none; font: inherit; color: var(--brand-text); background: var(--brand-surface-raised); border: 1px solid var(--brand-control-border); border-radius: 8px; cursor: pointer; }
+.task-image-add, .task-image-viewer button { min-height: 32px; padding: 5px 12px; font-size: 12px !important; white-space: nowrap; }
+.task-images button:hover, .task-image-viewer button:hover { background: var(--brand-surface-hover); }
+.task-images button:focus-visible, .task-image-viewer button:focus-visible { outline: 2px solid var(--brand-focus); outline-offset: 2px; }
+.task-images button:disabled { opacity: .5; cursor: default; }
+.task-image-hint, .task-image-status { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--brand-text-secondary); }
+.task-image-status:empty { display: none; }
+.task-image-status[data-error='true'] { font-weight: 600; }
+.task-image-list { display: grid; grid-template-columns: repeat(auto-fill,minmax(112px,1fr)); gap: 10px; margin-top: 10px; }
+.task-image-list:empty { display: none; }
+.task-image-item { min-width: 0; margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 5px 8px; align-items: center; }
+.task-image-preview { grid-column: 1 / -1; display: flex; width: 100%; height: 92px; overflow: hidden; padding: 0; align-items: center; justify-content: center; background: var(--brand-surface-inset) !important; }
+.task-image-preview img { width: 100%; height: 100%; object-fit: contain; }
+.task-image-preview span { padding: 8px; font-size: 12px; color: var(--brand-text-secondary); }
+.task-image-item figcaption { min-width: 0; font-size: 11px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; color: var(--brand-text-secondary); }
+.task-image-remove { min-height: 26px; padding: 2px 7px; font-size: 11px !important; }
+.task-images.is-dragging { outline: 2px dashed var(--brand-focus); outline-offset: 5px; }
+.task-image-viewer { position: fixed; inset: 0; width: min(1100px,calc(100vw - 48px)); height: min(820px,calc(100vh - 48px)); max-width: none; max-height: none; padding: 16px; border: 1px solid var(--brand-control-border); border-radius: 14px; color: var(--brand-text); background: var(--brand-surface); box-sizing: border-box; overflow: hidden; }
+.task-image-viewer[open] { display: flex; flex-direction: column; gap: 12px; }
+.task-image-viewer::backdrop { background: rgba(24,22,18,.64); }
+.task-image-viewer-toolbar { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 0 auto; }
+.task-image-viewer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.task-image-viewer-size { color: var(--brand-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.task-image-viewer-status { margin: 0; font-size: 13px; color: var(--brand-text-secondary); }
+.task-image-viewer-status:empty { display: none; }
+.task-image-viewer-canvas { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; background: var(--brand-surface-inset); border-radius: 8px; }
+.task-image-viewer-canvas img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.task-image-viewer-canvas img:not([src]) { display: none; }
+.task-image-viewer.is-original .task-image-viewer-canvas { display: block; }
+.task-image-viewer.is-original img { max-width: none; max-height: none; }
+@media (max-width: 620px) { .task-image-viewer { width: calc(100vw - 20px); height: calc(100vh - 20px); padding: 12px; } .task-image-viewer-size { display: none; } .task-image-viewer-toolbar { gap: 6px; } }

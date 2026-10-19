@@ -83,8 +83,8 @@
       const empty = document.createElement('button');
       empty.type = 'button';
       empty.className = 'command-empty';
-      empty.textContent = '添加第一条常用指令';
-      empty.addEventListener('click', () => commandInput?.focus({ preventScroll: true }));
+      empty.textContent = '添加第一条常用片段';
+      empty.addEventListener('click', () => window.SlateSnippets?.edit ? window.SlateSnippets.edit() : commandInput?.focus({ preventScroll: true }));
       commandList.appendChild(empty);
       return;
     }
@@ -96,8 +96,8 @@
       const textButton = document.createElement('button');
       textButton.className = 'command-text';
       textButton.type = 'button';
-      textButton.dataset.action = 'edit-command';
-      textButton.title = '点击修改';
+      textButton.dataset.action = 'copy-command';
+      textButton.title = '点击复制';
       textButton.textContent = command.text;
 
       const actions = document.createElement('div');
@@ -106,15 +106,20 @@
       copy.className = 'icon-button';
       copy.type = 'button';
       copy.dataset.action = 'copy-command';
-      copy.setAttribute('aria-label', '复制指令');
+      copy.setAttribute('aria-label', '复制片段');
       copy.innerHTML = COPY_ICON;
+      const edit = document.createElement('button');
+      edit.className = 'icon-button'; edit.type = 'button'; edit.dataset.action = 'edit-command';
+      edit.setAttribute('aria-label', '编辑片段');
+      edit.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m14 5 5 5M4 20l5-1L20 8a2.1 2.1 0 0 0-5-5L4 15z"/></svg>';
       const remove = document.createElement('button');
       remove.className = 'icon-button danger';
       remove.type = 'button';
       remove.dataset.action = 'delete-command';
-      remove.setAttribute('aria-label', '删除指令');
+      remove.setAttribute('aria-label', '删除片段');
       remove.innerHTML = DELETE_ICON;
-      actions.append(copy, remove);
+      actions.append(edit, copy, remove);
+      if(command.text.length>180||command.text.split('\n').length>5){const expand=document.createElement('button');expand.type='button';expand.className='snippet-expand';expand.textContent='展开全文';expand.setAttribute('aria-expanded','false');expand.onclick=()=>{const expanded=row.classList.toggle('snippet-expanded');expand.textContent=expanded?'收起':'展开全文';expand.setAttribute('aria-expanded',String(expanded));};actions.prepend(expand);}
       row.append(textButton, actions);
       commandList.appendChild(row);
     });
@@ -122,6 +127,7 @@
 
   function editCommand(row) {
     const command = commands.find((item) => item.id === row.dataset.id);
+    if(command&&window.SlateSnippets?.edit)return window.SlateSnippets.edit(command);
     if (!command || row.querySelector('input')) return;
     const button = row.querySelector('.command-text');
     const input = document.createElement('input');
@@ -148,6 +154,7 @@
 
   if (commandInput) {
     commandInput.addEventListener('keydown', (event) => {
+      if(commandInput.tagName==='TEXTAREA')return;
       if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229 || event.repeat) return;
       event.preventDefault();
       const command = Domain.createCommand(commandInput.value, uid('command'), Date.now());
@@ -184,6 +191,7 @@
       if (!action) return;
       if (action.dataset.action === 'edit-command') editCommand(row);
       if (action.dataset.action === 'delete-command') {
+        if(!saveJson(COMMANDS_KEY,commands.filter(item=>item.id!==command.id))){showStatusToast('片段删除失败，原内容保留，请重试');return;}
         commands = commands.filter((item) => item.id !== command.id);
         commandSelection.delete(command.id);
         persistCommands();
@@ -200,6 +208,7 @@
   }
   commandBulkDelete?.addEventListener('click', () => {
     if (!commandSelection.size) return;
+    if(!saveJson(COMMANDS_KEY,commands.filter(command=>!commandSelection.has(command.id)))){showStatusToast('片段删除失败，原内容保留，请重试');return;}
     commands = commands.filter((command) => !commandSelection.has(command.id));
     commandSelection.clear();
     commandSelectionAnchor = null;
@@ -789,6 +798,9 @@
   let transcriptionAudioMute = null;
   let transcriptionPcmQueue = [];
   let transcriptionFinishPromise = null;
+  let fileTranscriptionPending = false;
+  let recordingTranscriptionMode = 'realtime';
+  let transcriptionError = '';
   const recordingStartTask = Domain.createExclusiveAsyncTask(() => updateRecordingUi());
 
   function loadRecordingDeletions() {
@@ -823,10 +835,14 @@
       llmApiStatus.textContent = statuses.llm.label;
       llmApiStatus.dataset.state = statuses.llm.state;
     }
-    if (transcriptionRegion) transcriptionRegion.value = transcriptionConfig.region || 'beijing';
-    if (transcriptionWorkspace) transcriptionWorkspace.value = transcriptionConfig.workspaceId || '';
-    if (llmBaseUrl) llmBaseUrl.value = transcriptionConfig.llmBaseUrl || 'https://api.deepseek.com';
-    if (llmModel) llmModel.value = transcriptionConfig.llmModel || 'deepseek-v4-flash';
+    // Background recording/settings refreshes must not overwrite unsaved fields
+    // while the shared API panel is open.
+    if (!window.SlateApiSettings?.isOpen()) {
+      if (transcriptionRegion) transcriptionRegion.value = transcriptionConfig.region || 'beijing';
+      if (transcriptionWorkspace) transcriptionWorkspace.value = transcriptionConfig.workspaceId || '';
+      if (llmBaseUrl) llmBaseUrl.value = transcriptionConfig.llmBaseUrl || 'https://api.deepseek.com';
+      if (llmModel) llmModel.value = transcriptionConfig.llmModel || 'deepseek-v4-flash';
+    }
   }
 
   function setSettingsNote(message, error = false) {
@@ -935,87 +951,58 @@
   }
 
   function openTranscriptionSettings() {
-    if (!transcriptionSettingsBackdrop) return;
-    transcriptionSettingsBackdrop.hidden = false;
-    transcriptionSettingsNote.classList.remove('error', 'success');
-    transcriptionSettingsNote.textContent = transcriptionConfig.asrNeedsReentry || transcriptionConfig.llmNeedsReentry
-      ? '检测到旧版加密密钥，但升级后无法解密。请重新输入通义百炼与 DeepSeek 两把 API Key。'
-      : transcriptionConfig.configured || transcriptionConfig.llmConfigured
-        ? '已配置的 API Key 可留空；新输入的密钥会覆盖对应旧值。'
-        : '请分别配置通义百炼实时转写与 DeepSeek 两把 API Key。';
-    if (transcriptionApiKey) transcriptionApiKey.value = '';
-    if (llmApiKey) llmApiKey.value = '';
-    updateTranscriptionConfigUi();
-    setTimeout(() => transcriptionApiKey?.focus(), 0);
+    return window.SlateApiSettings?.open('asr');
   }
 
   function closeTranscriptionSettings() {
-    if (transcriptionSettingsBackdrop) transcriptionSettingsBackdrop.hidden = true;
+    window.SlateApiSettings?.close();
   }
 
   async function saveTranscriptionSettings() {
-    if (!window.slateAPI || !transcriptionSettingsSave) return;
-    if (
-      !transcriptionConfig.configured
-      && !transcriptionApiKey.value.trim()
-      && !transcriptionConfig.llmConfigured
-      && !llmApiKey.value.trim()
-    ) {
-      transcriptionSettingsNote.classList.add('error');
-      transcriptionSettingsNote.textContent = '请至少配置一个 API Key。';
-      return;
-    }
-    transcriptionSettingsSave.disabled = true;
-    transcriptionSettingsNote.classList.remove('error');
-    transcriptionSettingsNote.textContent = '正在安全保存…';
-    let result;
-    try {
-      result = await window.slateAPI.setTranscriptionConfig({
-        apiKey: transcriptionApiKey.value,
-        region: transcriptionRegion.value,
-        workspaceId: transcriptionWorkspace.value,
-        llmApiKey: llmApiKey.value,
-        llmBaseUrl: llmBaseUrl.value,
-        llmModel: llmModel.value,
-      });
-    } catch (error) {
-      result = { ok: false, error: 'save_failed' };
-    }
-    transcriptionSettingsSave.disabled = false;
-    if (!result || !result.ok) {
-      transcriptionSettingsNote.classList.add('error');
-      transcriptionSettingsNote.textContent = result && result.error === 'invalid_workspace'
-        ? 'Workspace ID 格式不正确。'
-        : result && result.error === 'invalid_llm_url'
-          ? '大语言模型 Base URL 必须是有效的 HTTPS 地址。'
-        : result && result.error === 'secure_storage_unavailable'
-          ? '当前系统安全存储不可用，可改用 DASHSCOPE_API_KEY 环境变量。'
-          : '配置保存失败，请重试。';
-      return;
-    }
-    transcriptionConfig = result;
-    if (transcriptionApiKey) transcriptionApiKey.value = '';
-    if (llmApiKey) llmApiKey.value = '';
-    updateTranscriptionConfigUi();
-    transcriptionSettingsNote.classList.remove('error');
-    transcriptionSettingsNote.classList.add('success');
-    transcriptionSettingsNote.textContent = '已安全保存。为保护密钥，输入框不会回显明文；上方状态可确认是否已配置。';
-    transcriptionSettingsSave.textContent = '已保存';
-    setTimeout(() => {
-      if (transcriptionSettingsSave) transcriptionSettingsSave.textContent = '保存';
-    }, 1200);
-    if (
-      transcriptionConfig.configured
-      && ['recording', 'paused'].includes(recordingStatus)
-      && !transcriptionStartPromise
-    ) {
-      stopSpeechRecognition();
-      transcriptionStatus = 'idle';
-      transcriptionStartPromise = startCloudTranscription();
-    }
-    updateRecordingUi();
-    renderSettingsPanel();
+    return window.SlateApiSettings?.save();
   }
+
+  // The shared API panel edits one capability at a time. Keep this adapter
+  // inside the recording closure so public config changes also refresh the
+  // existing recorder without ever exposing stored secrets to the renderer.
+  window.SlateTranscriptionSettings = Object.freeze({
+    async getConfig() {
+      await loadTranscriptionConfig();
+      return { ...transcriptionConfig };
+    },
+    async save(capability, payload) {
+      if (!window.slateAPI?.setTranscriptionConfig) return { ok: false, error: 'unavailable' };
+      const next = {};
+      if (capability === 'asr') {
+        next.apiKey = payload.apiKey || '';
+        next.region = payload.region;
+        next.workspaceId = payload.workspaceId;
+        if (payload.provider !== undefined) next.asrProvider = payload.provider;
+        if (payload.baseURL !== undefined) next.asrBaseUrl = payload.baseURL;
+        if (payload.model !== undefined) next.asrModel = payload.model;
+        if (payload.clearKey) next.clearApiKey = true;
+      } else if (capability === 'llm') {
+        next.llmApiKey = payload.apiKey || '';
+        next.llmBaseUrl = payload.baseURL;
+        next.llmModel = payload.model;
+        if (payload.provider !== undefined) next.llmProvider = payload.provider;
+        if (payload.clearKey) next.clearLlmApiKey = true;
+      } else return { ok: false, error: 'invalid_capability' };
+      const result = await window.slateAPI.setTranscriptionConfig(next);
+      if (!result?.ok) return result || { ok: false, error: 'save_failed' };
+      transcriptionConfig = result;
+      updateTranscriptionConfigUi();
+      if (capability === 'asr' && transcriptionConfig.configured
+        && ['recording', 'paused'].includes(recordingStatus) && !transcriptionStartPromise) {
+        stopSpeechRecognition();
+        transcriptionStatus = 'idle';
+        transcriptionStartPromise = startCloudTranscription();
+      }
+      updateRecordingUi();
+      renderSettingsPanel();
+      return { ...result };
+    },
+  });
 
   function persistRecordings() {
     return saveJson(RECORDINGS_KEY, recordings.filter((recording) => !recording.isDraft));
@@ -1048,13 +1035,14 @@
     if (recordingStartTask.isPending()) return '等待确认麦克风权限…';
     if (pendingRecordingSave?.discarding) return '正在放弃本次录音…';
     if (recordingCaptureIssue) return recordingCaptureIssue;
-    if (recordingStatus === 'saving') return '正在保存录音…';
+    if (recordingStatus === 'saving') return transcriptionStatus === 'finishing' && recordingTranscriptionMode === 'file' ? '音频已保存在本机，正在转写…' : '正在保存录音…';
     if (pendingRecordingSave) return recordingOutcome?.message || '录音尚未保存，内容已保留，请重试保存';
     if (transcriptionConfig.asrNeedsReentry) return '转写密钥已失效 · 请重新配置 API Key';
     if (transcriptionStatus === 'browser-error') return '未配置转写 API · 音频仍在录制';
-    if (transcriptionStatus === 'error') return '转写连接失败 · 音频仍在录制';
+    if (transcriptionStatus === 'error') return transcriptionError || '转写连接失败 · 音频仍在录制';
     if (transcriptionStatus === 'connecting') return '正在连接转写服务';
     if (recordingStatus === 'paused') return '录音已暂停';
+    if (transcriptionConfig.configured && recordingTranscriptionMode === 'file') return '正在本机录音 · 停止后上传转写（最多 10 分钟）';
     if (!transcriptionConfig.configured && !currentRecordingText()) return '未配置转写 API · 音频仍会保存在本机';
     return '正在录音';
   }
@@ -1117,7 +1105,9 @@
     if (detailDot) detailDot.dataset.state = failedSave ? 'error' : recordingStatus;
     if (detailTime) detailTime.textContent = formatClock(durationMs);
     if (detailTranscript && detailTranscript.value !== text) detailTranscript.value = text;
-    if (detailFeedback) detailFeedback.textContent = failedSave ? currentRecordingFeedback() : text ? '转写内容会随录音实时更新' : currentRecordingFeedback();
+    if (detailFeedback) detailFeedback.textContent = failedSave ? currentRecordingFeedback() : text && recordingTranscriptionMode !== 'file' ? '转写内容会随录音实时更新' : currentRecordingFeedback();
+    const cancelTranscription = recordingDetail?.querySelector('.recording-live-cancel-transcription');
+    if (cancelTranscription) cancelTranscription.hidden = !(recordingStatus === 'saving' && transcriptionStatus === 'finishing');
     if (detailAudioTitle) detailAudioTitle.textContent = failedSave ? '本次音频已保留，等待保存' : '音频正在本机录制';
     if (detailAudioHint) detailAudioHint.textContent = failedSave ? '请重试保存，或明确放弃本次录音；关闭前请先处理。' : '结束后会自动保存并出现播放器';
     if (detailConfigure) detailConfigure.hidden = transcriptionConfig.configured && !transcriptionConfig.asrNeedsReentry;
@@ -1199,8 +1189,10 @@
   async function startCloudTranscription() {
     if (!transcriptionConfig.configured || !window.slateAPI || !mediaStream) return { ok: false, error: 'not_configured' };
     transcriptionStatus = 'connecting';
+    transcriptionError = '';
+    recordingTranscriptionMode = transcriptionConfig.asrMode || 'realtime';
     transcriptionPcmQueue = [];
-    startTranscriptionAudioPipeline(mediaStream);
+    if (!startTranscriptionAudioPipeline(mediaStream)) { transcriptionStatus = 'error'; transcriptionError = '转写音频准备失败，本地录音仍会保存。'; return { ok: false, error: 'audio_unavailable' }; }
     updateRecordingUi();
     let result;
     try {
@@ -1227,7 +1219,7 @@
     stopTranscriptionAudioPipeline();
     await transcriptionStartPromise;
     transcriptionStartPromise = null;
-    if (transcriptionStatus !== 'connected') return { ok: false, error: 'not_connected', transcript: recordingTranscript };
+    if (transcriptionStatus !== 'connected') { window.slateAPI.cancelTranscription?.().catch(() => {}); return { ok: false, error: 'not_connected', transcript: recordingTranscript }; }
     transcriptionStatus = 'finishing';
     updateRecordingUi();
     let result;
@@ -1238,6 +1230,7 @@
     }
     if (result && result.transcript) recordingTranscript = result.transcript;
     transcriptionStatus = result && result.ok ? 'idle' : 'error';
+    if (!result?.ok) transcriptionError = String(result?.error || '转写失败，本地录音已保留。');
     interimTranscript = '';
     updateRecordingUi();
     return result;
@@ -1251,6 +1244,7 @@
         interimTranscript = String(event.interim || '').trim();
       } else if (event.type === 'error') {
         transcriptionStatus = 'error';
+        transcriptionError = String(event.message || '转写失败，本地录音仍会保存。');
       }
       updateRecordingUi();
     });
@@ -1430,6 +1424,10 @@
   }
 
   function clearRecordingCapture() {
+    fileTranscriptionPending = false;
+    transcriptionFinishPromise = null;
+    transcriptionStartPromise = null;
+    window.slateAPI?.cancelTranscription?.().catch(()=>{});
     recordingStatus = 'idle';
     recordingStartedAt = 0;
     pausedAt = 0;
@@ -1463,6 +1461,17 @@
       updateRecordingUi();
       return;
     }
+    if (fileTranscriptionPending) {
+      fileTranscriptionPending = false;
+      transcriptionFinishPromise = finishCloudTranscription();
+    }
+    if (transcriptionFinishPromise) {
+      // Persist the actual audio before waiting for a remote file transcription.
+      // A failed or cancelled request must never prevent local recording recovery.
+      updateRecordingUi();
+      await transcriptionFinishPromise;
+      transcriptionFinishPromise = null;
+    }
     const draft = activeRecordingDraft();
     const recording = Domain.createRecording({
       id: draft?.id || uid('recording'),
@@ -1485,7 +1494,7 @@
     recordingDraftId = '';
     selectedRecordingId = recording.id;
     clearRecordingCapture();
-    setRecordingOutcome('saved', '已保存', '录音已保存到本机，点击查看录音', pending.durationMs);
+    setRecordingOutcome('saved', '已保存', transcriptionError ? `音频已保存；${transcriptionError}` : '录音已保存到本机，点击查看录音', pending.durationMs);
     renderRecordings();
     updateRecordingUi();
     if (recording.transcript && window.slateAPI?.organizeMaterial) {
@@ -1587,22 +1596,18 @@
         const durationMs = recordingStopDurationMs || currentDuration();
         const blob = new Blob(audioChunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
         stopMediaTracks();
-        if (transcriptionFinishPromise) {
-          await transcriptionFinishPromise;
-          transcriptionFinishPromise = null;
-        }
         finalizeRecording(blob, durationMs);
       };
       mediaRecorder.start(1000);
       recordingStatus = 'recording';
       transcriptionStatus = 'idle';
+      transcriptionError = '';
+      recordingTranscriptionMode = transcriptionConfig.asrMode || 'realtime';
       transcriptionStartPromise = null;
       transcriptionFinishPromise = null;
       beginRecordingDraft();
       if (transcriptionConfig.configured) {
         transcriptionStartPromise = startCloudTranscription();
-      } else {
-        startSpeechRecognition();
       }
       clearInterval(recordingTimer);
       recordingTimer = setInterval(updateRecordingUi, 500);
@@ -1633,7 +1638,6 @@
       pausedAt = 0;
       mediaRecorder.resume();
       recordingStatus = 'recording';
-      if (!transcriptionConfig.configured) startSpeechRecognition();
     }
     updateRecordingUi();
   }
@@ -1643,7 +1647,9 @@
     recordingStopDurationMs = currentDuration();
     recordingStatus = 'saving';
     stopSpeechRecognition();
-    transcriptionFinishPromise = transcriptionStartPromise
+    fileTranscriptionPending = recordingTranscriptionMode === 'file' && !!transcriptionStartPromise;
+    if (fileTranscriptionPending) stopTranscriptionAudioPipeline();
+    transcriptionFinishPromise = fileTranscriptionPending ? null : transcriptionStartPromise
       ? finishCloudTranscription()
       : Promise.resolve({ ok: false, error: 'not_active', transcript: recordingTranscript });
     clearInterval(recordingTimer);
@@ -1655,10 +1661,7 @@
       stopMediaTracks();
       // Some devices stop the recorder before Chromium receives our stop call.
       // Recover chunks that already arrived rather than throwing that audio away.
-      Promise.resolve(transcriptionFinishPromise).then(() => {
-        transcriptionFinishPromise = null;
-        return finalizeRecording(new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' }), recordingStopDurationMs);
-      });
+      finalizeRecording(new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' }), recordingStopDurationMs);
     }
   }
 
@@ -1800,30 +1803,36 @@
     const result = await window.slateAPI?.exportBackup?.(collectLocalStorageSnapshot()).catch(() => ({ ok: false }));
     settingsBackupExport.disabled = false;
     if (result?.ok) setSettingsNote('备份已导出。');
-    else if (result?.error !== 'cancelled') setSettingsNote('备份导出失败。', true);
+      else if (result?.error !== 'cancelled') setSettingsNote(result?.error || '备份导出失败。', true);
   });
   settingsBackupImport?.addEventListener('click', async () => {
     settingsBackupImport.disabled = true;
     const result = await window.slateAPI?.importBackup?.().catch(() => ({ ok: false }));
     settingsBackupImport.disabled = false;
     if (!result?.ok) {
-      if (result?.error !== 'cancelled') setSettingsNote('备份文件无效或无法读取。', true);
+        if (result?.error !== 'cancelled') setSettingsNote(result?.error || '备份文件无效或无法读取。', true);
       return;
     }
     const backupKeys = [
-      'slate-todo-data', 'slate-todo-category-names-v1', 'slate-todo-categories-v2',
+        'slate-todo-data', 'slate-todo-category-names-v1', 'slate-todo-categories-v2',
+        'slate-recurring-tasks-v1','slate-reports-v1','slate-report-template-v1','slate-report-template-mode-v1','slate-report-profiles-v2','slate-report-draft-v1','slate-prompt-draft-v1','slate-home-language-tool-v1',
       'slate-home-note', 'slate-note-archive-v1', 'slate-note-active-archive-v1', 'slate-note-library-active-v1',
       'slate-home-order-v3', 'slate-home-widget-sizes-v2', 'slate-home-hidden-modules-v1',
       'slate-home-commands', 'slate-link-groups', 'slate-launcher-apps-v1', 'slate-appearance',
     ];
     // 不让旧页面的自动保存或 beforeunload 覆盖刚导入的数据。
-    workspaceReloadPending = true;
-    backupKeys.forEach((key) => localStorage.removeItem(key));
-    Object.entries(result.storage || {}).forEach(([key, value]) => {
-      if (typeof value === 'string') localStorage.setItem(key, value);
-    });
-    await window.slateAPI?.saveWorkspaceData?.(collectLocalStorageSnapshot()).catch(() => false);
-    location.reload();
+      const previous=Object.fromEntries(backupKeys.map(key=>[key,localStorage.getItem(key)]));
+      workspaceReloadPending = true;
+      try {
+        backupKeys.forEach((key) => localStorage.removeItem(key));
+        Object.entries(result.storage || {}).forEach(([key, value]) => {if(typeof value==='string')localStorage.setItem(key,value);});
+        const saved=await window.slateAPI?.saveWorkspaceData?.(collectLocalStorageSnapshot());
+        if(saved===false)throw new Error('workspace save failed');
+        location.reload();
+      } catch(error) {
+        backupKeys.forEach(key=>{if(previous[key]===null)localStorage.removeItem(key);else localStorage.setItem(key,previous[key]);});
+        workspaceReloadPending=false;setSettingsNote('导入没有完成，已恢复原数据。请检查存储空间后重试。',true);
+      }
   });
   settingsDefaultTab?.addEventListener('change', async () => {
     if (!window.slateAPI?.setDefaultTab) return;
@@ -1966,14 +1975,18 @@
       discard.textContent = '放弃';
       discard.hidden = true;
       discard.addEventListener('click', requestDiscardRecording);
-      liveControls.append(pause, stop, retry, discard);
+      const cancelTranscription = document.createElement('button');
+      cancelTranscription.type = 'button'; cancelTranscription.className = 'workspace-button compact recording-live-cancel-transcription';
+      cancelTranscription.textContent = '取消转写'; cancelTranscription.hidden = true;
+      cancelTranscription.addEventListener('click', () => window.slateAPI?.cancelTranscription?.());
+      liveControls.append(pause, stop, cancelTranscription, retry, discard);
       liveAudio.append(liveAudioTitle, liveAudioHint, liveControls);
 
       const transcriptHead = document.createElement('div');
       transcriptHead.className = 'recording-transcript-head';
       const transcriptLabel = document.createElement('span');
       transcriptLabel.className = 'tile-label';
-      transcriptLabel.textContent = '实时转写';
+      transcriptLabel.textContent = recordingTranscriptionMode === 'file' ? '录音后转写' : '实时转写';
       const configure = document.createElement('button');
       configure.type = 'button';
       configure.className = 'workspace-button compact recording-live-configure';
@@ -2952,6 +2965,14 @@
   resumeRecordingDeletions();
 
   window.SlateWorkspace = {
+    saveSnippet(text,id){
+      const value=String(text||'').trim();if(!value||value.length>16000)return {ok:false,error:'片段需为 1–16,000 字'};
+      const current=id?commands.find(item=>item.id===id):null;if(id&&!current)return {ok:false,error:'原片段已删除，请另存为新片段'};
+      const record=Domain.createCommand(value,current?.id||uid('command'),current?.createdAt||Date.now());
+      const next=current?commands.map(item=>item.id===id?record:item):[record,...commands];
+      if(!saveJson(COMMANDS_KEY,next))return {ok:false,error:'保存失败，文字已保留，请重试'};
+      commands=next;renderCommands();return {ok:true,id:record.id};
+    },
     refreshWindows,
     startRecording,
     isRecordingActive: isRecordingBusy,

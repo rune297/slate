@@ -121,7 +121,7 @@ app.whenReady().then(async () => {
     await click('.todo-view[data-view="inbox"]');
     await click(`${row(waiting.id)} [data-action="save-edit"]`);
     const pinLabel = await click(`${row(waiting.id)} [data-action="pin"]`);
-    assert.match(pinLabel, /设为重点|今日重点/, 'focus action has a clear label');
+    assert.match(pinLabel, /优先做|今日优先/, 'focus action has a clear label');
     assert.equal((await tasks()).find((item) => item.id === waiting.id).focusDate, today);
     await click('.todo-view[data-view="today"]');
     await click(`${row(waiting.id)} [data-action="details"]`);
@@ -165,7 +165,7 @@ app.whenReady().then(async () => {
     assert.equal(savedWaiting.estimateMinutes, 45);
     assert.equal(savedWaiting.focusDate, today);
     assert.equal((await tasks()).find((item) => item.id === first.id).completedAt, completed.completedAt);
-    assert.deepEqual(await homeIds(), [second.id, waiting.id, 'yesterday-focus'], 'reload preserves remaining focus order and overdue work');
+    assert.deepEqual(await homeIds(), [waiting.id, second.id, 'yesterday-focus'], 'reload preserves the newly prioritized task at the front and retains overdue work');
 
     await tab('todo');
     await click('.todo-view[data-view="today"]');

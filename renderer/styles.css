@@ -1436,10 +1436,18 @@ body {
 .clip-capture-action:focus-visible { outline:2px solid var(--text-3); outline-offset:-2px; }
 
 /* — 浮出操作按钮（收藏 / 删除） — */
-.clip-fav-btn,
-.clip-del-btn {
+.clip-item-actions {
   position: absolute;
   top: var(--s-2);
+  right: var(--s-2);
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+}
+.clip-fav-btn,
+.clip-del-btn {
+  position: static;
+  flex: 0 0 24px;
   width: 24px;
   height: 24px;
   display: flex;
@@ -1457,14 +1465,6 @@ body {
     color var(--d-fast) var(--ease),
     transform var(--d-1) var(--ease-out);
   -webkit-app-region: no-drag;
-}
-
-.clip-del-btn {
-  right: var(--s-2);
-}
-
-.clip-fav-btn {
-  right: 28px;
 }
 
 .clip-item:hover .clip-fav-btn,
@@ -3584,10 +3584,6 @@ select option { background-color: var(--select-popup-bg); color: var(--text-1); 
 .todo-due[data-tone='amber'] { background: rgba(191, 130, 10, .15); color: var(--status-warn); }
 .todo-due[data-tone='red'] { background: rgba(200, 60, 50, .16); color: var(--status-danger); font-weight: 620; }
 .todo-tag-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.todo-tag-rename { flex: 1 1 auto; min-width: 0; width: 100%; padding: 2px 4px; border: 0; border-radius: 6px; outline: none; background: var(--hover-bg-strong); color: var(--text-1); font: var(--fs-small) var(--font); }
-.todo-tag-delete { flex: 0 0 auto; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-4); font: 12px/18px var(--font); cursor: pointer; opacity: 0; transition: opacity var(--d-fast) var(--ease), background var(--d-fast) var(--ease), color var(--d-fast) var(--ease); }
-.todo-tag-row:hover .todo-tag-delete { opacity: 1; }
-.todo-tag-delete:hover { background: rgba(200, 60, 50, .16); color: var(--status-danger); }
 .todo-tag-add { justify-content: center; color: var(--text-3); border: 1px dashed var(--border-soft); }
 .todo-tag-add:hover { color: var(--text-1); background: var(--hover-bg); }
 

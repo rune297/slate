@@ -1,0 +1,13 @@
+/* A continuous top-edge slide; native bounds change only after the exit ends. */
+.panel{transform:translateY(-100%);opacity:0;transition:transform 300ms var(--ease-island),opacity 200ms var(--ease-soft)}
+.panel::before{clip-path:none!important;opacity:1!important;transition:none!important}
+.panel>.topbar,.panel>.panels{opacity:1!important;transition:none!important}
+#app.expanded .panel{transform:translateY(0);opacity:1}
+#app.closing .panel{transform:translateY(-100%);opacity:0;transition:transform 280ms var(--ease-soft),opacity 240ms var(--ease-soft)}
+#app.collapsed .slate{width:96px;height:6px;max-height:100%;padding:0;background:var(--brand-accent);border-radius:0 0 4px 4px;box-shadow:0 1px 4px #0002}
+#app.collapsed .slate-dot{width:38px;height:2px;margin-bottom:1px;background:var(--bg-base);opacity:.6}
+#app.collapsed .slate:hover{background:var(--slate-stone-light)}
+#app.collapsed .slate.has-overdue{background:#ad976e}
+#app.collapsed .slate.has-important{background:#bfa16b;box-shadow:0 1px 5px #a4844a66}
+#app.closing .slate{background:transparent}
+@media(prefers-reduced-motion:reduce){.panel,#app.closing .panel{transition-duration:0ms}}

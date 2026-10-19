@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Slate</title>
@@ -12,6 +12,19 @@
     <link rel="stylesheet" href="brand.css" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="settings.css" />
+    <link rel="stylesheet" href="settings-navigation.css" />
+    <link rel="stylesheet" href="api-settings.css" />
+    <link rel="stylesheet" href="task-planner.css" />
+    <link rel="stylesheet" href="task-attachments.css" />
+    <link rel="stylesheet" href="note-attachments.css" />
+    <link rel="stylesheet" href="reports.css" />
+    <link rel="stylesheet" href="panel-motion.css" />
+    <link rel="stylesheet" href="pull-gesture.css" />
+    <link rel="stylesheet" href="todo-mvp.css" />
+    <link rel="stylesheet" href="task-categories.css" />
+    <link rel="stylesheet" href="readability.css" />
+    <link rel="stylesheet" href="quick-snippets.css" />
+    <link rel="stylesheet" href="prompt-optimizer.css" />
   </head>
   <body>
     <div id="app" class="collapsed">
@@ -265,7 +278,7 @@
                 <div class="todo-view-head">
                   <strong id="todo-view-title">今天</strong>
                   <span id="todo-view-sub"></span>
-                  <div class="todo-review-actions"><button id="home-review-day" type="button">今日复盘</button><button id="home-review-week" type="button">本周复盘</button></div>
+                  <div id="todo-v15-actions"></div><div class="todo-review-actions" hidden><button id="home-review-day" type="button">今日复盘</button><button id="home-review-week" type="button">本周复盘</button></div>
                   <select id="todo-status-filter" aria-label="筛选处理状态"><option value="all">全部状态</option><option value="active">待处理</option><option value="waiting">等待反馈</option><option value="followup">持续跟进</option></select>
                   <button class="bulk-delete todo-bulk-delete" id="todo-bulk-delete" type="button" hidden>删除</button>
                 </div>
@@ -382,25 +395,28 @@
           <section id="tab-settings" class="tab-panel" role="tabpanel" aria-labelledby="tab-button-settings" aria-hidden="true" inert>
             <div class="settings-page" id="settings-page" aria-label="Slate 设置">
               <div class="settings-column settings-column-primary">
-                <section class="tile settings-card">
+                <section class="tile settings-card" id="settings-api-card">
                   <div class="settings-card-heading">
-                    <div><span class="tile-label">智能能力</span><strong>API 配置</strong></div>
-                    <button class="workspace-button compact" id="settings-api-configure" type="button">配置或替换</button>
+                    <div><strong>AI / API 配置</strong></div>
+                    <button class="workspace-button compact" id="settings-api-configure" type="button">管理配置</button>
                   </div>
                   <div class="settings-status-list">
-                    <div><span>通义百炼实时转写</span><small id="settings-transcription-status" data-state="empty">未配置</small></div>
-                    <div><span>DeepSeek 智能命名</span><small id="settings-llm-status" data-state="empty">未配置</small></div>
+                    <div><span>录音转写</span><small id="settings-transcription-status" data-state="empty">未配置</small></div>
+                    <div><span>智能整理</span><small id="settings-llm-status" data-state="empty">未配置</small></div>
+                    <div><span>工作报告</span><small id="settings-report-status" data-state="empty">未配置</small></div>
                   </div>
-                  <p>密钥由系统安全存储加密，仅在你主动查看或复制时解密。</p>
+                  <p>按功能分别配置，密钥加密保存在本机。</p>
                 </section>
 
                 <section class="tile settings-card settings-translation-card">
                   <div class="settings-card-heading"><div><span class="tile-label">本地翻译</span><strong>模型与快捷键</strong></div></div>
+                  <div class="translation-model-info"><strong id="translation-model-state">正在读取模型状态…</strong><p id="translation-model-runtime"></p></div>
                   <div class="translation-setup" id="translation-setup">
                     <p>首次联网下载约 610 MB 模型，建议预留 1 GB 空间。此后离线翻译，空闲一分钟释放内存。</p>
                     <div class="settings-actions"><button class="settings-primary" id="translation-install" type="button">下载模型</button><button id="translation-import" type="button">导入本地模型</button></div>
                   </div>
                   <p id="translation-install-status" role="status"></p>
+                  <div class="settings-actions"><button id="translation-check" type="button">刷新状态</button><button id="translation-unload" type="button" disabled>释放模型内存</button></div>
                   <div class="settings-option">
                     <p>快捷键读取剪贴板并直接在首页翻译；短句识别不准时可手动选择语言。</p>
                     <div class="settings-actions"><button id="translation-shortcut" type="button">设置快捷键</button><button id="translation-shortcut-clear" type="button">清除快捷键</button></div>
@@ -440,7 +456,7 @@
                     <label><span><b>当前窗口</b><small>窗口快速切换</small></span><input type="checkbox" data-settings-home-module="windows" aria-label="显示当前窗口" /><i aria-hidden="true"></i></label>
                     <label><span><b>今日待办</b><small>事项清单与完成进度</small></span><input type="checkbox" data-settings-home-module="tasks" aria-label="显示今日待办" /><i aria-hidden="true"></i></label>
                     <label><span><b>随手笔记</b><small>直接写，自动保存</small></span><input type="checkbox" data-settings-home-module="note" aria-label="显示随手笔记" /><i aria-hidden="true"></i></label>
-                    <label><span><b>快捷翻译</b><small>剪贴板直接译中文</small></span><input type="checkbox" data-settings-home-module="translation" aria-label="显示快捷翻译" /><i aria-hidden="true"></i></label>
+                    <label><span><b>提示词优化与本地翻译</b><small>优化提示词，或离线译中文</small></span><input type="checkbox" data-settings-home-module="translation" aria-label="显示提示词优化与本地翻译" /><i aria-hidden="true"></i></label>
                   </div>
                 </section>
               </div>
@@ -600,12 +616,26 @@
     <script src="../platform.js"></script>
     <script src="domain.js"></script>
     <script src="workflow.js"></script>
+    <script src="recurrence.js"></script>
     <script src="effects.js"></script>
+    <script src="task-categories.js"></script>
     <script src="app.js"></script>
+    <script src="pull-gesture.js"></script>
     <script src="workspace.js"></script>
+    <script src="api-settings.js"></script>
     <script src="translation.js"></script>
     <script src="workday.js"></script>
     <script src="capture.js"></script>
     <script src="icon-motion.js"></script>
+    <script src="task-planner.js"></script>
+    <script src="task-attachments.js"></script>
+    <script src="note-attachments.js"></script>
+    <script src="reminder-settings.js"></script>
+    <script src="reports.js"></script>
+    <script src="settings-navigation.js"></script>
+    <script src="quick-snippets.js"></script>
+    <script src="prompt-optimizer.js"></script>
+    <script src="copy-feedback-settings.js"></script>
+    <script src="task-integration.js"></script>
   </body>
 </html>

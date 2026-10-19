@@ -21,6 +21,9 @@
   --brand-selected: var(--slate-stone-dark);
   --brand-selected-text: #ffffff;
   --brand-toggle: var(--slate-stone-light);
+  --brand-toggle-off: #d8d4cd;
+  --brand-toggle-knob: #ffffff;
+  --brand-toggle-off-knob: #777166;
 }
 
 :root[data-theme='dark'] {
@@ -39,4 +42,8 @@
   --brand-focus: #ede6d8;
   --brand-selected: #ede6d8;
   --brand-selected-text: var(--slate-stone-dark);
+  --brand-toggle: var(--brand-selected);
+  --brand-toggle-off: #423e38;
+  --brand-toggle-knob: var(--slate-stone-dark);
+  --brand-toggle-off-knob: #c4bdb0;
 }

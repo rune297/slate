@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'" />
+  <title>Slate · 待办提醒</title>
+  <link rel="stylesheet" href="brand.css" />
+  <link rel="stylesheet" href="todo-reminder.css" />
+  <script defer src="todo-reminder.js"></script>
+</head>
+<body>
+  <header><h1>待办提醒</h1><button id="reminder-close" class="icon-button" type="button" title="关闭提醒" aria-label="关闭提醒"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg></button></header>
+  <main>
+    <div class="task-heading"><span id="reminder-kind">正在读取…</span><span id="reminder-count"></span></div>
+    <h2 id="reminder-task"></h2>
+    <p id="reminder-time"></p>
+    <button id="reminder-view" class="text-button" type="button">查看待办详情</button>
+    <div id="reminder-reschedule-fields" hidden>
+      <label for="reminder-deadline">延期至</label>
+      <input id="reminder-deadline" type="datetime-local" />
+      <button id="reminder-confirm" type="button">确认延期</button>
+      <div class="reminder-edit-row"><span>已取消或需要修改内容？</span><button id="reminder-edit" type="button">打开待办修改</button></div>
+    </div>
+    <div class="actions"><button id="reminder-complete" class="primary" type="button">已经完成</button><button id="reminder-reschedule" type="button" aria-expanded="false" aria-controls="reminder-reschedule-fields">调整任务</button><button id="reminder-acknowledge" type="button">知道了</button></div>
+    <div class="pagination"><button id="reminder-prev" class="text-button" type="button">上一项</button><span>知道了仅确认提醒，任务仍保留</span><button id="reminder-next" class="text-button" type="button">下一项</button></div>
+    <p id="reminder-feedback" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>

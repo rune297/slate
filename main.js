@@ -6,6 +6,7 @@ const {
   Tray,
   Menu,
   nativeImage,
+  nativeTheme,
   shell,
   systemPreferences,
   clipboard,
@@ -14,6 +15,8 @@ const {
   dialog,
   desktopCapturer,
   ClipboardItem,
+  powerMonitor,
+  net,
 } = require('electron');
 const WebSocket = require('ws');
 const path = require('path');
@@ -22,9 +25,33 @@ const http = require('http');
 const dns = require('dns');
 const zlib = require('zlib');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
+const { execFile,spawn } = require('child_process');
 const { fork } = require('child_process');
 const { TranslationService } = require('./translation-service.cjs');
+const { createTodoReminderService } = require('./todo-reminders.cjs');
+const { createTaskAttachmentService, normalizeAttachments } = require('./todo-attachments.cjs');
+const { createReportService } = require('./report-service.cjs');
+const {createAIHub}=require('./ai-hub-service.cjs');
+const {sendChat,listModels,modelListFailure}=require('./ai-chat.cjs');
+const {configReady:aiConfigReady}=require('./ai-catalog.cjs');
+const {createPromptOptimizer}=require('./prompt-optimizer.cjs');
+// Chromium follows the desktop's proxy settings; never attach browser cookies to AI requests.
+const fetchAI=(url,init)=>net.fetch(url,{...init,credentials:'omit',cache:'no-store',bypassCustomProtocolHandlers:true});
+let aiHub;
+const aiModelJobs=new Map();
+function aiServices(){return aiHub||=(createAIHub({getDataDir:()=>app.getPath('userData'),safeStorage,readLegacy(){
+  const old=readStoredTranscriptionSettings();let report={};const location=path.join(app.getPath('userData'),'report-settings.json');
+  if(fs.existsSync(location)){try{report=JSON.parse(fs.readFileSync(location,'utf8'));}catch{throw Error('原报告配置无法读取，请先备份并检查后再迁移。');}}
+  return {asr:{provider:old.asrProvider||'dashscope-realtime',baseURL:old.asrBaseUrl||'',model:old.asrModel||TRANSCRIPTION_MODEL,encryptedKey:old.encryptedApiKey,region:old.region,workspaceId:old.workspaceId},llm:{provider:inferProvider(old.llmProvider,old.llmBaseUrl),baseURL:old.llmBaseUrl,model:old.llmModel,encryptedKey:old.encryptedLlmApiKey},reports:{provider:inferProvider(report.provider,report.baseURL),baseURL:report.baseURL,model:report.model,encryptedKey:report.encryptedKey}};
+}}));}
+const promptOptimizer=createPromptOptimizer({resolveConfig:()=>aiServices().resolve('prompt'),fetchImpl:fetchAI});
+const {createCopyFeedbackService}=require('./copy-feedback.cjs');
+const copyFeedback=createCopyFeedbackService({BrowserWindow,screen,spawn,helperPath:app.isPackaged?path.join(process.resourcesPath,'native','slate-clipboard-observer.exe'):path.join(__dirname,'build','native','slate-clipboard-observer.exe'),preloadPath:path.join(__dirname,'copy-feedback-preload.js'),readSettings:readAppSettings,getTheme:()=>nativeTheme.shouldUseDarkColors?'dark':'light'});
+const { PRESETS: API_PROVIDER_PRESETS, MAX_PCM_BYTES, inferProvider, normalizeEndpoint: normalizeApiEndpoint, chatBody, transcribePcm, createConnectionTester } = require('./ai-provider-service.cjs');
+let todoRemindersV15, taskAttachmentsV15, reportsV15;
+let reminderBadge = {overdue:0,important:0,upcoming:0};
+const taskActionRequests = new Map();
+let taskActionSequence = 0;
 let translationService;
 let translationShortcut = '';
 let translationProxy = '';
@@ -71,7 +98,7 @@ ipcMain.handle('translation:install', async () => {
 ipcMain.handle('translation:import', async () => {
   const service=localTranslator();
   if(service.status().busy) return {ok:false,error:'请先停止当前任务'};
-  const result=await dialog.showOpenDialog(mainWindow,{title:'选择 translation-models 文件夹（包含 Xenova 子目录）',properties:['openDirectory'],defaultPath:path.join(app.getPath('home'),'AppData','Local','Slate','translation-models')});
+  const result=await showOwnedOpenDialog({title:'选择 translation-models 文件夹（包含 Xenova 子目录）',properties:['openDirectory'],defaultPath:path.join(app.getPath('home'),'AppData','Local','Slate','translation-models')});
   if(result.canceled || !result.filePaths[0]) return {cancelled:true};
   const source=result.filePaths[0];
   const files=['config.json','generation_config.json','tokenizer_config.json','tokenizer.json','onnx/encoder_model_quantized.onnx','onnx/decoder_model_merged_quantized.onnx'];
@@ -294,15 +321,13 @@ const TAB_SIZES = {
 const EXPANDED_CHROME_Y = 76;
 const SCREEN_MARGIN = 24; // 宽度超屏时两侧保留的安全边
 // 收起兜底：渲染层退场动画若没跑完就强制收起。原值 650 太拖沓，点完要等近一秒。
-const COLLAPSE_WATCHDOG_MS = 220;
+const COLLAPSE_WATCHDOG_MS = 560;
 // Windows 展开尺寸上限。原版 1240×616 对「随手记一下」来说太大，占掉近六成屏幕。
 // 注意保持宽度 > 1050，否则会掉进渲染层的窄屏断点，布局会变。
 const WIN_PANEL_LIMITS = { maxWidth: 1080, maxHeight: 560 };
 
 // ===== 顶部热区唤出（本地定制）=====
-// 原版把折叠条常驻在屏幕顶部。这里改为：收起后把整个窗口移到屏幕上方之外，
-// 光标触到屏幕顶部中央的窄带时才唤出；点击别处 / 失焦 / Esc 收起后自动移回屏幕外。
-// 想恢复原版常驻折叠条：把 TOP_REVEAL_ENABLED 改成 false。
+// 收起后保留主题色提示条；顶部手势与点击提示条都能唤出面板。
 const TOP_REVEAL_ENABLED = process.platform === 'win32';
 // 唤出模式（改这一行即可切换）：
 //   'gesture' 下拉手势（默认，推荐）：光标到顶部后「空手」向下推一段距离才唤出。
@@ -313,7 +338,6 @@ const TOP_REVEAL_MODE = 'gesture';
 const TOP_REVEAL_HOTZONE_PX = 10; // 顶部感应带高度（像素），够宽才好触发
 const TOP_REVEAL_HALF_WIDTH = 300; // 感应带水平半宽，以屏幕中心为基准
 const TOP_REVEAL_POLL_MS = 120; // 光标轮询间隔
-const TOP_REVEAL_PARK_Y = -4000; // 停靠时的 y 坐标（屏幕上方之外）
 const TOP_REVEAL_PUSH_PX = 40; // 下拉手势：触发所需的向下位移，越小越好触发
 const TOP_REVEAL_PUSH_WINDOW_MS = 900; // 下拉手势：进入热区后完成手势的时间上限
 const TOP_REVEAL_DWELL_MS = 500; // 兜底停留唤出：感应层失效时仍能用（用户反馈 900ms 偏长，调至 0.5s）
@@ -383,8 +407,10 @@ let currentMode = 'collapsed';
 let currentTab = 'home';
 let collapseWatchdog = null;
 let collapseGeneration = 0;
+let panelPullSession = null;
+let panelPullSequence = 0;
 let hideWhenCollapsed = false;
-// 顶部热区唤出状态：panelParked 表示窗口已移到屏幕外；topRevealArmed 防止
+// 顶部热区唤出状态：panelParked 表示窗口停靠为提示条；topRevealArmed 防止
 // 收起后光标还停在顶部热区里时立刻又被唤出（否则会来回抖动）。
 let panelParked = false;
 let topRevealArmed = true;
@@ -398,8 +424,8 @@ let dismissOutsideSince = 0;
 let dismissExpandedAt = 0;
 let dismissWasInside = false;
 let panelHadFocus = false;
-// 展开动画还没走完就收到收起意图时置位。等真正进入 expanded 再补一次收起，
-// 否则焦点已离开、不会再有第二次 blur，面板会永久停在展开态（点外部关不掉）。
+// 展开动画或下拉回弹期间收到收起意图时置位，在手势结束后补上。
+// 否则焦点已离开、不会再有第二次 blur，面板会停在展开态（点外部关不掉）。
 let collapseAfterExpand = false;
 let isQuitting = false;
 let mediaPermissionRequests = 0;
@@ -500,7 +526,7 @@ function getMenuBarHeight(display) {
 }
 
 function getCollapsedHeight(display) {
-  if (process.platform === 'win32') return COLLAPSED_MIN_HEIGHT;
+  if (process.platform === 'win32') return 8;
   const mb = getMenuBarHeight(display);
   // 折叠条高度恰好等于菜单栏带（≈物理顶部条高），一个像素都不超出物理顶部条。
   // 无顶部条的外接屏 menuBarHeight 仍是真实菜单栏高，能正常露头；
@@ -526,7 +552,10 @@ function getExpandedSize(display) {
 // 原生窗口只提供透明画布，用户可见的岛体形变交给渲染层 CSS。
 function getBoundsForMode(mode, display) {
   const d = display || getWindowDisplay();
-  if (process.platform === 'win32') return platformPolicy.panelBounds(process.platform, d, mode === 'expanded', WIN_PANEL_LIMITS);
+  if (process.platform === 'win32') {
+    if (mode === 'expanded') return platformPolicy.panelBounds(process.platform, d, true, WIN_PANEL_LIMITS);
+    return {x:Math.round(d.workArea.x+(d.workArea.width-120)/2),y:d.workArea.y,width:120,height:8};
+  }
   if (mode === 'expanded') {
     const { width, height } = getExpandedSize(d);
     return getCenteredBounds(width, height, d);
@@ -544,7 +573,10 @@ function cancelCollapseWatchdog() {
 
 function applyMode(mode, display) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  clearPanelPull(true, mode === 'expanded');
   cancelCollapseWatchdog();
+  const dismissAfterExpand = mode === 'expanded' && collapseAfterExpand;
+  collapseAfterExpand = false;
   mainWindow.setIgnoreMouseEvents(false);
   currentMode = mode;
   setHotzoneEnabled(mode !== 'expanded');
@@ -558,14 +590,20 @@ function applyMode(mode, display) {
     stopDismissPolling();
     debugLog('collapsed');
   }
-  if (mode === 'expanded' && collapseAfterExpand) {
-    // 展开动画期间用户就已经点到外部了，这里补上那次被搁置的收起意图。
-    collapseAfterExpand = false;
-    setTimeout(() => requestRendererCollapse(), 0);
+  if (dismissAfterExpand) {
+    // 先完成当前手势交接，再交还同一个收起状态机。后续的新展开不能沿用旧意图。
+    const targetWindow = mainWindow;
+    const generation = collapseGeneration;
+    setTimeout(() => {
+      if (mainWindow !== targetWindow || currentMode !== 'expanded' || collapseGeneration !== generation) return;
+      if (outsideDismissProtected()) return;
+      requestRendererCollapse();
+    }, 0);
   }
   if (mode === 'expanded') {
     hideWhenCollapsed = false;
     panelParked = false;
+    if(process.platform==='win32')mainWindow.setShape([]);
     mainWindow.setBounds(getBoundsForMode('expanded', display));
   } else if (hideWhenCollapsed) {
     hideWhenCollapsed = false;
@@ -574,7 +612,7 @@ function applyMode(mode, display) {
     mainWindow.hide();
     refreshTrayMenu();
   } else if (TOP_REVEAL_ENABLED) {
-    // 收起后不留折叠条：直接停到屏幕外，等光标触到顶部热区再唤出。
+    // Collapsed mode keeps a small, visible handle at the top edge.
     parkPanel(display);
   } else {
     mainWindow.setBounds(getBoundsForMode('collapsed', display));
@@ -585,6 +623,7 @@ function applyMode(mode, display) {
 // 纯重新定位不能改变收起事务，否则屏幕变化会取消 watchdog 并重新吞掉鼠标。
 function repositionWindow(display) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (panelPullSession) { clearPanelPull(true); applyMode('collapsed', display); return; }
   mainWindow.setBounds(getBoundsForMode(currentMode, display));
 }
 
@@ -605,6 +644,12 @@ function beginNativeCollapse() {
 
 function requestRendererCollapse() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (panelPullSession) {
+    // Pointer capture and the native canvas must settle before collapsing, but
+    // an outside click/blur during that interval is still a real dismissal.
+    collapseAfterExpand = true;
+    return;
+  }
   if (currentMode !== 'expanded') {
     // 唤出动画期间失焦/点到外部：此刻状态还是 collapsed，不能像原版那样直接丢弃，
     // 否则动画一结束窗口就停在展开态，而焦点已走、再无第二次 blur —— 永久卡住。
@@ -632,28 +677,20 @@ function hideWindowAfterCollapse() {
 }
 
 // ============ 顶部热区唤出 ============
-// 不在屏幕上留任何常驻元素：收起态把窗口搬到屏幕上方之外（保持窗口"可见"，
-// 避免 Electron 把隐藏窗口的定时器降频，待办到期提醒照常走）。
-function parkedY() {
-  // 取所有屏幕的最上沿再往上挪，避免多屏上下排列时停到另一块屏上。
-  try {
-    const top = Math.min(...screen.getAllDisplays().map((d) => d.bounds.y));
-    return top - Math.abs(TOP_REVEAL_PARK_Y);
-  } catch (e) {
-    return TOP_REVEAL_PARK_Y;
-  }
-}
-
+// Main-process reminders continue independently of the collapsed renderer.
 function parkPanel(display) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const d = display || getWindowDisplay();
   const bounds = getBoundsForMode('collapsed', d);
   mainWindow.setBounds({
     x: bounds.x,
-    y: parkedY(),
+    y: bounds.y,
     width: bounds.width,
     height: bounds.height,
   });
+  // Windows enforces a native minimum height. Restrict the actual drawing and
+  // hit-test region so the transparent remainder never blocks another app.
+  if(process.platform==='win32')mainWindow.setShape([{x:12,y:0,width:96,height:8}]);
   panelParked = true;
   // 光标此刻多半就停在顶部（用户刚点完别处），先解除待命，等它离开热区再武装。
   topRevealArmed = false;
@@ -695,10 +732,24 @@ function createHotzoneWindow() {
     },
   });
   hotzoneWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (process.platform === 'win32') {
+    // A non-activating Chromium window can eat this press before DOM mousedown.
+    // Observe only our own HWND's activation message; no global mouse hook.
+    hotzoneWindow.hookWindowMessage(0x0021, (_wParam, lParam) => {
+      const message = lParam.length >= 4 ? lParam.readUInt32LE(0) >>> 16 : 0;
+      if (![0x0201, 0x0204, 0x0207, 0x020B].includes(message)) return;
+      const point = screen.getCursorScreenPoint();
+      setImmediate(() => {
+        debugLog('dismiss:native-press');
+        handleDismissPress(null, point);
+      });
+    });
+  }
   // 关键：忽略鼠标事件（点击直接穿透到下面的标题栏/标签页），但把鼠标移动消息
   // 转发进页面，于是 hotzone.html 能读到 e.buttons。
   hotzoneWindow.setIgnoreMouseEvents(true, { forward: true });
   hotzoneWindow.loadFile(path.join(__dirname, 'hotzone.html'));
+  hotzoneWindow.webContents.once('did-finish-load', () => setHotzoneEnabled(currentMode !== 'expanded'));
   hotzoneWindow.on('closed', () => {
     hotzoneWindow = null;
   });
@@ -717,22 +768,44 @@ function positionHotzoneWindow(display) {
   });
 }
 
-// 面板展开时收起感应层，避免它盖在主窗口上方干扰面板内的点击。
+function outsideDismissProtected() {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  return panelPinned || mediaPermissionRequests > 0 || transientSystemInteractionRequests > 0
+    || Boolean(focusedWindow && focusedWindow !== mainWindow && focusedWindow !== hotzoneWindow);
+}
+
+function syncDismissHotzone() {
+  if (currentMode === 'expanded' || panelPullSession) setHotzoneEnabled(false);
+}
+
+// 展开时感应层只接收面板外按下；固定面板和原生/自家弹窗期间保持穿透。
 function setHotzoneEnabled(enabled) {
   if (!hotzoneWindow || hotzoneWindow.isDestroyed()) return;
+  if (panelPullSession) { hotzoneWindow.hide(); return; }
   if (enabled) {
+    hotzoneWindow.setBackgroundColor('#00000000');
+    hotzoneWindow.webContents.send('hotzone:dismiss-active', false);
     hotzoneWindow.setIgnoreMouseEvents(true, { forward: true });
     positionHotzoneWindow();
     if (!hotzoneWindow.isVisible()) hotzoneWindow.show();
   } else {
-    // 展开态复用同一个透明感应窗覆盖当前屏幕并接收面板外按压。
+    if (outsideDismissProtected()) { hotzoneWindow.hide(); return; }
+    // Windows excludes alpha-zero pixels from native hit testing. One alpha
+    // step keeps this light-dismiss surface hittable without a visible scrim.
+    hotzoneWindow.setBackgroundColor('#01000000');
+    hotzoneWindow.webContents.send('hotzone:dismiss-active', true);
+    // 覆盖显示器并集，无焦点唤出后点另一块屏幕也能接到第一次外部按下。
     // 主面板保持在它上方，所以面板内点击仍直接进入主窗口。
-    const d = getWindowDisplay();
+    const displays = screen.getAllDisplays();
+    const left = Math.min(...displays.map(display => display.bounds.x));
+    const top = Math.min(...displays.map(display => display.bounds.y));
+    const right = Math.max(...displays.map(display => display.bounds.x + display.bounds.width));
+    const bottom = Math.max(...displays.map(display => display.bounds.y + display.bounds.height));
     hotzoneWindow.setBounds({
-      x: d.bounds.x,
-      y: d.bounds.y,
-      width: d.bounds.width,
-      height: d.bounds.height,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
     });
     hotzoneWindow.setIgnoreMouseEvents(false);
     if (!hotzoneWindow.isVisible()) hotzoneWindow.showInactive();
@@ -744,7 +817,7 @@ function isPointInPanel(x, y, margin) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   const b = mainWindow.getBounds();
   const m = Number(margin) || 0;
-  return x >= b.x - m && x <= b.x + b.width + m && y >= b.y - m && y <= b.y + b.height + m;
+  return x >= b.x - m && x < b.x + b.width + m && y >= b.y - m && y < b.y + b.height + m;
 }
 
 function debugLog(message) {
@@ -771,7 +844,7 @@ function tickDismissPolling() {
   if (mediaPermissionRequests > 0 || transientSystemInteractionRequests > 0) return;
   // 焦点落在自家另一个窗口（任务提醒浮窗等）上时不收起。
   const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (focusedWindow && focusedWindow !== mainWindow) {
+  if (focusedWindow && focusedWindow !== mainWindow && focusedWindow !== hotzoneWindow) {
     dismissOutsideSince = 0;
     return;
   }
@@ -785,7 +858,7 @@ function tickDismissPolling() {
   } else if (panelHadFocus) {
     panelHadFocus = false;
     const cursor = screen.getCursorScreenPoint();
-    if (isPointInPanel(cursor.x, cursor.y, DISMISS_EDGE_MARGIN_PX)) {
+    if (isPointInPanel(cursor.x, cursor.y)) {
       debugLog('focus-lost but cursor inside panel, keep open');
       return;
     }
@@ -865,7 +938,7 @@ function stopDismissPolling() {
 function handleDismissMove(payload) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (isPanelHidden()) return;
-  if (panelPinned) return;
+  if (outsideDismissProtected()) return;
   const buttons = Number(payload && payload.buttons) || 0;
   if (buttons === 0) return;
   // 同上：位置取主进程实时光标，避免页面坐标与 DIP 不一致。
@@ -876,15 +949,14 @@ function handleDismissMove(payload) {
   requestRendererCollapse();
 }
 
-function handleDismissPress(payload) {
-  if (!mainWindow || mainWindow.isDestroyed() || currentMode !== 'expanded') return;
-  if (panelPinned || mediaPermissionRequests > 0 || transientSystemInteractionRequests > 0) return;
-  const x = Number(payload && payload.x);
-  const y = Number(payload && payload.y);
-  const point = Number.isFinite(x) && Number.isFinite(y)
-    ? { x, y }
-    : screen.getCursorScreenPoint();
-  if (isPointInPanel(point.x, point.y, DISMISS_EDGE_MARGIN_PX)) return;
+function handleDismissPress(_payload, nativePoint) {
+  if (!mainWindow || mainWindow.isDestroyed() || isPanelHidden()) return;
+  if (outsideDismissProtected()) return;
+  // Use the same DIP coordinate space as BrowserWindow bounds on scaled screens.
+  const point = nativePoint || screen.getCursorScreenPoint();
+  // This is an explicit press, so the pointer-leave tolerance must not turn
+  // the first 16px outside the native window into an unresponsive strip.
+  if (isPointInPanel(point.x, point.y)) return;
   debugLog('collapse: press-outside');
   requestRendererCollapse();
 }
@@ -896,6 +968,7 @@ function resetTopRevealGesture() {
 
 // 感应层送来的鼠标移动：buttons !== 0 一律判为「在拖东西」，直接放弃本次手势。
 function handleHotzoneMove(payload) {
+  if (panelPullSession) return;
   if (!TOP_REVEAL_ENABLED || TOP_REVEAL_MODE === 'off') return;
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (currentMode === 'expanded') {
@@ -948,6 +1021,7 @@ function isCursorInTopRevealZone() {
 
 function revealPanelFromTopEdge() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (panelPullSession) return;
   if (currentMode === 'expanded') return;
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   panelParked = false;
@@ -982,7 +1056,7 @@ function syncTopRevealPolling() {
   const poll = () => {
     topRevealTimer = null;
     let nextDelay = 320;
-    if (mainWindow && !mainWindow.isDestroyed() && currentMode !== 'expanded') {
+    if (mainWindow && !mainWindow.isDestroyed() && currentMode !== 'expanded' && !panelPullSession) {
       const inZone = isCursorInTopRevealZone();
       nextDelay = inZone ? TOP_REVEAL_POLL_MS : 320;
       if (!inZone) {
@@ -1227,6 +1301,8 @@ function scheduleNextTodoReminder() {
 }
 
 ipcMain.handle('todos:schedule-reminders', (event, items) => {
+  if (!isMainRenderer(event)) return {ok:false,error:'forbidden'};
+  if (todoRemindersV15) { todoRemindersV15.updateTasks(items);return {ok:true}; }
   const previousById = new Map(scheduledTodoReminders.map((todo) => [todo.id, todo]));
   scheduledTodoReminders = Array.isArray(items)
     ? items
@@ -1574,6 +1650,10 @@ ipcMain.on('dismiss:press', (_event, payload) => {
   handleDismissPress(payload);
 });
 
+// The capture layer must never cover another Slate window or a native dialog.
+app.on('browser-window-focus', syncDismissHotzone);
+app.on('browser-window-blur', () => { setTimeout(syncDismissHotzone, 0); });
+
 function createWindow() {
   const initial = getCenteredBounds(COLLAPSED_WIDTH, getCollapsedHeight(getTargetDisplay()));
 
@@ -1635,17 +1715,23 @@ function createWindow() {
     // 失焦但光标还在面板矩形内：多半是点在了面板的透明留白上，点击穿透到
     // 背后的窗口抢走了焦点。用户预期「点在窗口里不收起」，保持展开。
     const cursor = screen.getCursorScreenPoint();
-    if (isPointInPanel(cursor.x, cursor.y, DISMISS_EDGE_MARGIN_PX)) {
+    if (isPointInPanel(cursor.x, cursor.y)) {
       debugLog('blur but cursor inside panel, keep open');
       return;
     }
-    requestRendererCollapse();
+    // Windows emits the old window's blur before the new owner's focus. Wait
+    // one task so our own quick-capture window is not mistaken for an app exit.
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isFocused() || outsideDismissProtected()) return;
+      requestRendererCollapse();
+    }, 0);
   });
 
   mainWindow.on('focus', () => {
     cameraBlurDeferred = false;
     panelHadFocus = true;
     debugLog('window:focus');
+    syncDismissHotzone();
   });
   mainWindow.on('show', syncHoverSpacePolling);
   mainWindow.on('hide', syncHoverSpacePolling);
@@ -1659,8 +1745,24 @@ function createWindow() {
     syncTopRevealPolling();
   });
 
+  const reportOwnerId=mainWindow.webContents.id;
+  const resetRendererWork = () => {
+    promptOptimizer.cancel(reportOwnerId);aiModelJobs.get(reportOwnerId)?.abort();
+    reportsV15?.cancel(reportOwnerId);
+    apiConnectionTester.cancel(reportOwnerId);
+    closeAllTranscriptionSessions();
+    if (panelPullSession) { clearPanelPull(false); applyMode('collapsed'); }
+  };
+  mainWindow.webContents.on('did-start-loading',resetRendererWork);
+  mainWindow.webContents.on('render-process-gone',resetRendererWork);
   mainWindow.on('closed', () => {
+    promptOptimizer.cancel(reportOwnerId);aiModelJobs.get(reportOwnerId)?.abort();
+    reportsV15?.cancel(reportOwnerId);
+    apiConnectionTester.cancel(reportOwnerId);
+    closeAllTranscriptionSessions();
+    for(const pending of taskActionRequests.values())pending.finish({ok:false,error:'Slate 主窗口已关闭'});
     cancelCollapseWatchdog();
+    clearPanelPull(false);
     stopDismissPolling();
     hideWhenCollapsed = false;
     mainWindow = null;
@@ -1715,11 +1817,11 @@ function readJsonFile(filePath, fallback = {}) {
   }
 }
 
-function writeJsonFile(filePath, value) {
+function writeJsonFile(filePath, value, serialized) {
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(temporaryPath, JSON.stringify(value, null, 2), { mode: 0o600 });
+    fs.writeFileSync(temporaryPath, serialized === undefined ? JSON.stringify(value, null, 2) : serialized, { mode: 0o600 });
     fs.renameSync(temporaryPath, filePath);
     return true;
   } catch (error) {
@@ -1733,6 +1835,8 @@ function readAppSettings() {
   const features = { ...DEFAULT_FEATURES, ...(stored.features || {}), home: true };
   const legacyClipboardCapture = !stored.clipboard && stored.features?.clip === true;
   return {
+    todoReminders: stored.todoReminders,
+    todoReminderReceipts: stored.todoReminderReceipts,
     features,
     shortcut: isValidPanelShortcut(stored.shortcut) ? stored.shortcut : 'Control+Alt+S',
     clipShortcut: isValidClipboardShortcut(stored.clipShortcut) ? stored.clipShortcut : '',
@@ -1772,6 +1876,7 @@ function showOwnedOpenDialog(options) {
     options,
     (delta) => {
       transientSystemInteractionRequests = Math.max(0, transientSystemInteractionRequests + delta);
+      syncDismissHotzone();
       if (delta < 0 && transientSystemInteractionRequests === 0 && mediaPermissionRequests === 0) {
         cameraBlurDeferred = false;
       }
@@ -1786,33 +1891,40 @@ async function showOwnedSaveDialog(options) {
     owner.focus();
   }
   transientSystemInteractionRequests += 1;
+  syncDismissHotzone();
   try {
     return owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
   } finally {
     transientSystemInteractionRequests = Math.max(0, transientSystemInteractionRequests - 1);
+    syncDismissHotzone();
   }
 }
 
 function copyWorkspaceAssets(sourceRoot, targetRoot) {
-  if (!sourceRoot || !targetRoot || path.resolve(sourceRoot) === path.resolve(targetRoot)) return;
-  for (const directory of [RECORDINGS_DIR_NAME, CLIP_IMAGES_DIR_NAME]) {
-    const source = path.join(sourceRoot, directory);
-    const target = path.join(targetRoot, directory);
-    try {
-      if (!fs.existsSync(source) || !fs.lstatSync(source).isDirectory()) continue;
-      fs.mkdirSync(target, { recursive: true });
-      fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: false });
-    } catch (error) {}
-  }
-  for (const filename of [WORKSPACE_DATA_FILE]) {
-    const source = path.join(sourceRoot, filename);
-    const target = path.join(targetRoot, filename);
-    try {
-      if (fs.existsSync(source) && fs.lstatSync(source).isFile() && !fs.existsSync(target)) {
-        fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
-      }
-    } catch (error) {}
-  }
+  if (!sourceRoot || !targetRoot) return false;
+  if (path.resolve(sourceRoot) === path.resolve(targetRoot)) return true;
+  const directories=[RECORDINGS_DIR_NAME,CLIP_IMAGES_DIR_NAME,'todo-images'];
+  try {
+    const resolvedSource=fs.realpathSync(sourceRoot),resolvedTarget=fs.realpathSync(targetRoot);
+    for(const directory of directories){const relative=path.relative(path.join(resolvedSource,directory),resolvedTarget);if(!relative||(!relative.startsWith('..')&&!path.isAbsolute(relative)))return false;}
+    function copyEntry(source,target){
+      const info=fs.lstatSync(source);if(info.isSymbolicLink())throw Error('symbolic media path');
+      if(fs.existsSync(target)&&fs.lstatSync(target).isSymbolicLink())throw Error('symbolic target');
+      if(info.isDirectory()){fs.mkdirSync(target,{recursive:true});for(const name of fs.readdirSync(source))copyEntry(path.join(source,name),path.join(target,name));return;}
+      if(!info.isFile())throw Error('invalid media file');
+      if(fs.existsSync(target)){if(!filesEqual(source,target))throw Error('workspace asset conflict');return;}
+      fs.copyFileSync(source,target,fs.constants.COPYFILE_EXCL);
+    }
+    // A different saved workspace at the destination must not be overwritten.
+    for(const name of [WORKSPACE_DATA_FILE,...directories]){const source=path.join(resolvedSource,name);if(fs.existsSync(source))copyEntry(source,path.join(resolvedTarget,name));}
+    return true;
+  }catch(error){return false;}
+}
+
+function filesEqual(left,right){
+  if(fs.statSync(left).size!==fs.statSync(right).size)return false;
+  const a=fs.openSync(left,'r'),b=fs.openSync(right,'r'),aa=Buffer.alloc(65536),bb=Buffer.alloc(65536);
+  try{let size;while((size=fs.readSync(a,aa,0,aa.length,null))>0){if(fs.readSync(b,bb,0,size,null)!==size||!aa.subarray(0,size).equals(bb.subarray(0,size)))return false;}return true;}finally{fs.closeSync(a);fs.closeSync(b);}
 }
 
 async function chooseWorkspaceFolder() {
@@ -1823,9 +1935,9 @@ async function chooseWorkspaceFolder() {
   const selected = !result.canceled && result.filePaths && result.filePaths[0];
   if (!selected) return false;
   const previousRoot = workspaceRoot();
-  copyWorkspaceAssets(previousRoot, selected);
+  if(!copyWorkspaceAssets(previousRoot, selected))return false;
   if (!writeJsonFile(getJsonSettingsPath(WORKSPACE_SETTINGS_FILE), { path: selected })) return false;
-  for (const directory of [RECORDINGS_DIR_NAME, CLIP_IMAGES_DIR_NAME]) {
+  for (const directory of [RECORDINGS_DIR_NAME, CLIP_IMAGES_DIR_NAME, 'todo-images']) {
     try { fs.mkdirSync(path.join(selected, directory), { recursive: true }); } catch (error) {}
   }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('workspace:changed', { path: selected });
@@ -1834,6 +1946,7 @@ async function chooseWorkspaceFolder() {
 }
 
 function applyFeatureServices(settings) {
+  copyFeedback.configure(settings);
   const policy = clipboardServicePolicy(settings);
   if (clipboardResumeTimer) clearTimeout(clipboardResumeTimer);
   clipboardResumeTimer = null;
@@ -1963,7 +2076,7 @@ function applyAppSettings() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('settings:changed', publicAppSettings());
 }
 
-function openRendererPanel(channel) {
+function openRendererPanel(channel, payload) {
   if (!mainWindow || mainWindow.isDestroyed()) createWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
   hideWhenCollapsed = false;
@@ -1973,7 +2086,7 @@ function openRendererPanel(channel) {
   repositionWindow(getTargetDisplay());
   mainWindow.show();
   const send = () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel,payload);
   };
   if (mainWindow.webContents.isLoadingMainFrame()) mainWindow.webContents.once('did-finish-load', send);
   else send();
@@ -1986,6 +2099,40 @@ function isMainRenderer(event) {
 function isQuickCaptureRenderer(event) {
   return !!quickCaptureWindow && !quickCaptureWindow.isDestroyed() && event.sender === quickCaptureWindow.webContents;
 }
+
+function requestTaskAction(payload) {
+  return new Promise(resolve=>{
+    if(!mainWindow||mainWindow.isDestroyed())return resolve({ok:false,error:'Slate 正在加载，请稍后重试'});
+    const id=`task-action-${++taskActionSequence}`;
+    const finish=result=>{const pending=taskActionRequests.get(id);if(!pending)return;clearTimeout(pending.timer);taskActionRequests.delete(id);resolve(result);};
+    const timer=setTimeout(()=>finish({ok:false,error:'没有收到保存确认，请查看待办后重试'}),12000);timer.unref?.();
+    taskActionRequests.set(id,{finish,timer});
+    mainWindow.webContents.send('v15:task-action-request',{...payload,requestId:id});
+  });
+}
+ipcMain.on('v15:task-action-response',(event,payload)=>{if(isMainRenderer(event)&&typeof payload?.requestId==='string')taskActionRequests.get(payload.requestId)?.finish(payload);});
+
+function initializeTaskServices() {
+  taskAttachmentsV15=createTaskAttachmentService({fs,path,dialog,nativeImage,getWorkspacePath:workspaceRoot});
+  reportsV15=createReportService({getDataDir:()=>app.getPath('userData'),safeStorage,resolveConfig:()=>aiServices().resolve('reports'),fetchImpl:fetchAI});
+  todoRemindersV15=createTodoReminderService({BrowserWindow,screen,ipcMain,readSettings:readAppSettings,saveSettings:saveAppSettings,
+    isMainSender:isMainRenderer,getMainWindow:()=>mainWindow,preloadPath:path.join(__dirname,'todo-reminder-preload.js'),requestAction:requestTaskAction,
+    openTask:async id=>{openRendererPanel('v15:task-open',{id});},
+    onBadge:badge=>{reminderBadge=badge;if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('v15:task-badge',badge);}});
+}
+ipcMain.handle('v15:task-badge-get',event=>isMainRenderer(event)?reminderBadge:null);
+ipcMain.handle('v15:task-attachment-choose',async event=>{
+  if(!isMainRenderer(event))return {ok:false,error:'forbidden'};
+  transientSystemInteractionRequests++;
+  syncDismissHotzone();
+  try{return await taskAttachmentsV15.choose(mainWindow);}finally{transientSystemInteractionRequests=Math.max(0,transientSystemInteractionRequests-1);syncDismissHotzone();}
+});
+ipcMain.handle('v15:task-attachment-import',(event,payload)=>isMainRenderer(event)?taskAttachmentsV15.importImage(payload):{ok:false,error:'forbidden'});
+ipcMain.handle('v15:task-attachment-read',(event,descriptor,options)=>isMainRenderer(event)?taskAttachmentsV15.read(descriptor,options):{ok:false,error:'forbidden'});
+ipcMain.handle('reports:config-get',event=>isMainRenderer(event)?reportsV15.getConfig():{ok:false,error:'forbidden'});
+ipcMain.handle('reports:config-save',(event,payload)=>{if(!isMainRenderer(event))return {ok:false,error:'forbidden'};const result=reportsV15.saveConfig(payload);if(result.ok&&aiServices().exists()){try{const legacy=JSON.parse(fs.readFileSync(path.join(app.getPath('userData'),'report-settings.json'),'utf8'));aiServices().syncLegacy('reports',legacy);return reportsV15.getConfig();}catch{return {ok:false,error:'配置同步失败，请到 AI 配置重新选择服务。'};}}return result;});
+ipcMain.handle('reports:generate',(event,payload)=>isMainRenderer(event)?reportsV15.generate(payload,event.sender.id):{ok:false,error:'forbidden'});
+ipcMain.handle('reports:cancel',event=>isMainRenderer(event)?reportsV15.cancel(event.sender.id):{ok:false,error:'forbidden'});
 
 // 任务、笔记仍由原窗口操作同一份内存状态和工作区持久化；小窗不读写 localStorage。
 function requestQuickCaptureRenderer(action, text = '', owner = quickCaptureWindow) {
@@ -2252,6 +2399,65 @@ function createTray() {
   refreshTrayMenu();
 }
 
+// A drag uses the existing native window as a fixed canvas. Pointer frames stay
+// in the renderer; only begin/ready/finish cross IPC, with a bounded recovery.
+function clearPanelPull(notify, expanded = false) {
+  const session = panelPullSession;
+  if (!session) return;
+  panelPullSession = null;
+  clearTimeout(session.timer);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setOpacity(1);
+    if (notify && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('window:pull-cancel', session.id, expanded);
+  }
+}
+
+ipcMain.handle('window:pull-begin', (event, fromMode = 'collapsed') => {
+  if (!isMainRenderer(event) || panelPullSession || !['collapsed', 'expanded'].includes(fromMode) || currentMode !== fromMode) return { ok: false };
+  const display = getWindowDisplay();
+  const session = { id: ++panelPullSequence, display, initialMode: fromMode };
+  panelPullSession = session;
+  session.timer = setTimeout(() => {
+    if (panelPullSession !== session) return;
+    clearPanelPull(true, session.initialMode === 'expanded');
+    applyMode(session.initialMode, display);
+  }, 20000);
+  session.timer.unref?.();
+  cancelCollapseWatchdog();
+  stopDismissPolling();
+  resetTopRevealGesture();
+  stopHoverSpaceShortcut();
+  topRevealArmed = false;
+  collapseAfterExpand = false;
+  hideWhenCollapsed = false;
+  panelParked = false;
+  if (fromMode === 'collapsed') mainWindow.setOpacity(0);
+  mainWindow.setIgnoreMouseEvents(false);
+  if (process.platform === 'win32') mainWindow.setShape([]);
+  if (fromMode === 'collapsed') mainWindow.setBounds(getBoundsForMode('expanded', display));
+  setHotzoneEnabled(false);
+  if (fromMode === 'collapsed') void rememberPasteTarget();
+  return { ok: true, id: session.id };
+});
+ipcMain.handle('window:pull-ready', (event, id) => {
+  if (!isMainRenderer(event) || panelPullSession?.id !== id) return { ok: false };
+  mainWindow.setOpacity(1);
+  return { ok: true };
+});
+ipcMain.handle('window:pull-finish', (event, payload) => {
+  if (!isMainRenderer(event) || panelPullSession?.id !== payload?.id) return { ok: false };
+  const display = panelPullSession.display;
+  const opening = panelPullSession.initialMode === 'collapsed';
+  clearPanelPull(false);
+  const expanded = payload.expanded === true;
+  applyMode(expanded ? 'expanded' : 'collapsed', display);
+  if (expanded) {
+    if (!mainWindow.isVisible()) mainWindow.showInactive();
+    if (opening) mainWindow.focus();
+  }
+  return { ok: true };
+});
+
 ipcMain.handle('window:set-mode', async (event, mode) => {
   if (mode === 'expanded') await rememberPasteTarget();
   applyMode(mode === 'expanded' ? 'expanded' : 'collapsed');
@@ -2263,6 +2469,7 @@ ipcMain.handle('window:begin-collapse', () => {
 
 ipcMain.handle('window:set-pinned', (event, pinned) => {
   panelPinned = pinned === true;
+  syncDismissHotzone();
   return panelPinned;
 });
 
@@ -2345,6 +2552,7 @@ ipcMain.handle('settings:set-clipboard', (event, patch) => {
   const current = readAppSettings();
   const allowed = {};
   if (typeof patch.captureEnabled === 'boolean') allowed.captureEnabled = patch.captureEnabled;
+  if (typeof patch.feedbackEnabled === 'boolean') allowed.feedbackEnabled = patch.feedbackEnabled;
   if (Number.isFinite(Number(patch.pausedUntil))) allowed.pausedUntil = Math.max(0, Number(patch.pausedUntil));
   if ([1, 7, 30, 90].includes(Number(patch.retentionDays))) allowed.retentionDays = Number(patch.retentionDays);
   if (Array.isArray(patch.ignoredApps) || typeof patch.ignoredApps === 'string') allowed.ignoredApps = patch.ignoredApps;
@@ -2397,7 +2605,7 @@ ipcMain.handle('workspace:save-data', (event, storage) => {
   if (!storage || typeof storage !== 'object' || Array.isArray(storage)) return false;
   const portableStorage = normalizePortableStorage(storage);
   const serialized = JSON.stringify(portableStorage);
-  if (Buffer.byteLength(serialized) > 8 * 1024 * 1024) return false;
+  if (Buffer.byteLength(serialized) > 32 * 1024 * 1024) return false;
   const destination = workspacePath(WORKSPACE_DATA_FILE);
   if (!workspacePersistenceGate.shouldWrite(portableStorage, destination)) return true;
   const written = writeJsonFile(destination, {
@@ -2411,7 +2619,10 @@ ipcMain.handle('workspace:save-data', (event, storage) => {
 ipcMain.handle('workspace:open', () => shell.openPath(workspaceRoot()));
 ipcMain.handle('workspace:choose', () => chooseWorkspaceFolder());
 ipcMain.handle('workspace:export-backup', async (event, storage) => {
-  const safeStorage = sanitizeBackupStorage(storage);
+  if(!isMainRenderer(event))return {ok:false,error:'forbidden'};
+  let safeStorage;try{safeStorage=sanitizeBackupStorage(storage);}catch(error){return {ok:false,error:error.message};}
+  const images=await taskAttachmentsV15.exportPortable(collectTaskAttachments(safeStorage));
+  if(!images.ok)return images;
   const settings = readAppSettings();
   const date = new Date().toISOString().slice(0, 10);
   const result = await showOwnedSaveDialog({
@@ -2423,20 +2634,25 @@ ipcMain.handle('workspace:export-backup', async (event, storage) => {
   if (result.canceled || !result.filePath) return { ok: false, error: 'cancelled' };
   const backup = {
     format: 'slate-backup',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     storage: safeStorage,
+    todoImages: images.images,
     settings: {
       features: settings.features,
       defaultTab: settings.defaultTab,
       clipboard: settings.clipboard,
+      todoReminders: todoRemindersV15.getSettings(),
     },
   };
-  return writeJsonFile(result.filePath, backup)
+  const serialized=JSON.stringify(backup,null,2);
+  if(Buffer.byteLength(serialized)>145*1024*1024)return {ok:false,error:'备份总大小超过 145 MB，请减少图片或分批整理后导出'};
+  return writeJsonFile(result.filePath, backup, serialized)
     ? { ok: true, path: result.filePath }
     : { ok: false, error: 'write_failed' };
 });
-ipcMain.handle('workspace:import-backup', async () => {
+ipcMain.handle('workspace:import-backup', async event => {
+  if(!isMainRenderer(event))return {ok:false,error:'forbidden'};
   const result = await showOwnedOpenDialog({
     title: '导入 Slate 数据备份',
     buttonLabel: '导入',
@@ -2446,11 +2662,22 @@ ipcMain.handle('workspace:import-backup', async () => {
   if (result.canceled || !result.filePaths?.[0]) return { ok: false, error: 'cancelled' };
   try {
     const filePath = result.filePaths[0];
-    if (fs.statSync(filePath).size > 8 * 1024 * 1024) return { ok: false, error: 'too_large' };
+    if (fs.statSync(filePath).size > 145 * 1024 * 1024) return { ok: false, error: 'too_large' };
     const document = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    if (document?.format !== 'slate-backup' || document?.version !== 1) return { ok: false, error: 'invalid_backup' };
+    if (document?.format !== 'slate-backup' || ![1,2].includes(document?.version)) return { ok: false, error: 'invalid_backup' };
     const storage = sanitizeBackupStorage(document.storage);
     if (!Object.keys(storage).length) return { ok: false, error: 'empty_backup' };
+    for(const key of ['slate-todo-data','slate-todo-categories-v2','slate-recurring-tasks-v1','slate-reports-v1','slate-note-archive-v1']) {
+      if(!storage[key])continue;const value=JSON.parse(storage[key]);
+      if(key==='slate-todo-data'?(!value||typeof value!=='object'||Array.isArray(value)||Object.values(value).some(rows=>!Array.isArray(rows))):!Array.isArray(value))return {ok:false,error:'invalid_backup'};
+    }
+    const references=collectTaskAttachments(storage),images=document.todoImages||[];
+    if(!Array.isArray(images))return {ok:false,error:'invalid_backup'};
+    for(const ref of references){
+      const normalized=normalizeAttachments([ref])[0],image=images.find(image=>image?.attachment?.id===ref?.id);
+      if(!normalized||!image||['id','relativePath','mime','size','width','height'].some(key=>normalized[key]!==image.attachment[key]))return {ok:false,error:'待办图片记录不完整或不匹配，请重新导出完整备份'};
+    }
+    const restored=await taskAttachmentsV15.importPortable(images);if(!restored.ok)return restored;
     const current = readAppSettings();
     const importedFeatures = document.settings?.features && typeof document.settings.features === 'object'
       ? { ...current.features, ...document.settings.features, home: true }
@@ -2462,12 +2689,21 @@ ipcMain.handle('workspace:import-backup', async () => {
       defaultTab: normalizeDefaultTabPreference(document.settings?.defaultTab, importedFeatures),
     };
     if (!saveAppSettings(next)) return { ok: false, error: 'save_failed' };
+    if(document.settings?.todoReminders)todoRemindersV15.setSettings(document.settings.todoReminders);
     applyAppSettings();
     return { ok: true, storage, importedKeys: Object.keys(storage).length };
   } catch (error) {
-    return { ok: false, error: 'invalid_backup' };
+    return { ok: false, error: '备份格式无效、内容过大或无法读取，请保留原数据后重试' };
   }
 });
+
+function collectTaskAttachments(storage) {
+  const result=[];
+  try {for(const items of Object.values(JSON.parse(storage['slate-todo-data']||'{}')))for(const task of Array.isArray(items)?items:[])if(Array.isArray(task?.attachments))result.push(...task.attachments);}catch{}
+  try {for(const rule of JSON.parse(storage['slate-recurring-tasks-v1']||'[]'))if(Array.isArray(rule?.attachments))result.push(...rule.attachments);}catch{}
+  try {for(const note of JSON.parse(storage['slate-note-archive-v1']||'[]'))if(Array.isArray(note?.attachments))result.push(...note.attachments);}catch{}
+  return result;
+}
 
 function getLayoutMetrics(display) {
   const d = display || getWindowDisplay();
@@ -2499,6 +2735,7 @@ async function requestMacMediaAccess(mediaType) {
     track: (delta) => {
       if (delta > 0 && mediaType === 'camera') mediaPermissionBatchHadCamera = true;
       mediaPermissionRequests = Math.max(0, mediaPermissionRequests + delta);
+      syncDismissHotzone();
       if (delta >= 0 || mediaPermissionRequests > 0) return;
       const shouldCollapse = cameraBlurDeferred && mediaPermissionBatchHadCamera;
       mediaPermissionBatchHadCamera = false;
@@ -2688,41 +2925,20 @@ async function fetchFaviconDataUrl(pageUrl, html) {
 
 async function enrichLinkMetadata(url, title) {
   const config = resolveLlmConfig();
-  if (!config.apiKey || !config.model) return { title, category: '' };
-  const endpoint = config.baseUrl.endsWith('/chat/completions')
-    ? config.baseUrl
-    : `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
-  const safeEndpoint = await validatePublicHttpUrl(endpoint);
-  if (!safeEndpoint) return { title, category: '' };
+  if ((!config.apiKey&&!config.keyOptional) || !config.model) return { title, category: '' };
+  try{normalizeApiEndpoint(config.baseUrl);}catch{return {title,category:''};}
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LINK_FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(safeEndpoint, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'Slate/0.3 (+local bookmark organizer)',
-      },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-        ...(config.baseUrl.includes('deepseek.com') ? { thinking: { type: 'disabled' } } : {}),
-        messages: [
+    const response = await sendChat(config, [
           {
             role: 'system',
             content: '你是网址收藏夹整理器。只返回 JSON：{"title":"简洁中文名称","category":"短分类"}。分类应稳定、可复用，不超过 14 个字。',
           },
           { role: 'user', content: `URL: ${url}\n网页标题: ${title}` },
-        ],
-      }),
-    });
+        ], { fetchImpl:fetchAI,signal:controller.signal,maxTokens:1024,temperature:0.1,responseFormat:{type:'json_object'} });
     if (!response.ok) return { title, category: '' };
-    const payload = await response.json();
-    const content = payload && payload.choices && payload.choices[0] && payload.choices[0].message && payload.choices[0].message.content;
-    const parsed = parseSmartLinkMetadata(content);
+    const parsed = parseSmartLinkMetadata(response.text);
     if (!parsed) return { title, category: '' };
     return { title: parsed.title || title, category: parsed.category };
   } catch (error) {
@@ -2796,29 +3012,17 @@ async function inspectLink(rawUrl) {
 ipcMain.handle('links:inspect', (event, url) => inspectLink(url));
 
 ipcMain.handle('smart:organize-material', async (event, payload) => {
+  if(!isMainRenderer(event))return {ok:false,error:'forbidden'};
   const config = resolveLlmConfig();
   const kind = payload && payload.kind === 'note' ? 'note' : 'material';
   const transcript = String(payload && payload.text || '').trim().slice(0, 8000);
   if (!transcript) return { ok: false, error: 'empty_text' };
-  if (!config.apiKey || !config.model) return { ok: false, error: 'not_configured' };
-  const endpoint = config.baseUrl.endsWith('/chat/completions')
-    ? config.baseUrl
-    : `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
-  const safeEndpoint = await validatePublicHttpUrl(endpoint);
-  if (!safeEndpoint) return { ok: false, error: 'invalid_endpoint' };
+  if ((!config.apiKey&&!config.keyOptional) || !config.model) return { ok: false, error: 'not_configured' };
+  try{normalizeApiEndpoint(config.baseUrl);}catch{return {ok:false,error:'invalid_endpoint'};}
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    const response = await fetch(safeEndpoint, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-        ...(config.baseUrl.includes('deepseek.com') ? { thinking: { type: 'disabled' } } : {}),
-        messages: [
+    const response = await sendChat(config, [
           {
             role: 'system',
             content: kind === 'note'
@@ -2826,13 +3030,9 @@ ipcMain.handle('smart:organize-material', async (event, payload) => {
               : '你是中文个人资料库整理器。根据内容概括，不要照抄首句。只返回 JSON：{"title":"8到18字的具体名称","category":"2到8字的稳定分类"}。',
           },
           { role: 'user', content: kind === 'note' ? `请为以下笔记命名：\n\n${transcript}` : transcript },
-        ],
-      }),
-    });
+        ], { fetchImpl:fetchAI,signal:controller.signal,maxTokens:1024,temperature:0.1,responseFormat:{type:'json_object'} });
     if (!response.ok) return { ok: false, error: `http_${response.status}` };
-    const result = await response.json();
-    const content = result && result.choices && result.choices[0] && result.choices[0].message && result.choices[0].message.content;
-    const metadata = parseSmartMaterialMetadata(content);
+    const metadata = parseSmartMaterialMetadata(response.text);
     return metadata && metadata.title ? { ok: true, ...metadata } : { ok: false, error: 'invalid_response' };
   } catch (error) {
     return { ok: false, error: error && error.name === 'AbortError' ? 'timeout' : 'request_failed' };
@@ -3339,6 +3539,7 @@ ipcMain.handle('credentials:copy', async (event, payload) => {
   const item = readCredentialsVault().find((row) => row.id === id);
   if (!item) return false;
   const value = item[field];
+  if(field==='password')copyFeedback.mute();
   await clipboard.writeText(value);
   if (field === 'password') {
     setTimeout(() => {
@@ -3495,15 +3696,18 @@ function decryptStoredSecret(value) {
 }
 
 function resolveLlmConfig() {
+  const assigned=aiServices().resolve('llm');if(assigned!==null)return {...assigned,baseUrl:assigned.baseURL||'',apiKey:assigned.apiKey||'',model:assigned.model||''};
   const settings = readStoredTranscriptionSettings();
   return {
     apiKey: String(process.env.SLATE_LLM_API_KEY || decryptStoredSecret(settings.encryptedLlmApiKey)).trim(),
     baseUrl: String(settings.llmBaseUrl || 'https://api.deepseek.com').trim(),
     model: String(settings.llmModel || 'deepseek-v4-flash').trim(),
+    provider: inferProvider(settings.llmProvider, settings.llmBaseUrl || 'https://api.deepseek.com'),
   };
 }
 
 function resolveTranscriptionConfig() {
+  const assigned=aiServices().resolve('asr');if(assigned!==null)return {...assigned,provider:assigned.protocol==='realtime'?'dashscope-realtime':assigned.provider==='openai'?'openai':'custom',baseURL:assigned.baseURL||'',apiKey:assigned.apiKey||'',model:assigned.model||''};
   const settings = readStoredTranscriptionSettings();
   const environmentWorkspace = String(process.env.DASHSCOPE_WORKSPACE_ID || process.env.DASHSCOPE_WORKSPACE || '').trim();
   const environmentRegion = String(process.env.DASHSCOPE_REGION || '').trim().toLowerCase();
@@ -3512,7 +3716,10 @@ function resolveTranscriptionConfig() {
     : ['beijing', 'singapore'].includes(settings.region) ? settings.region : 'beijing';
   const workspaceId = (environmentWorkspace || String(settings.workspaceId || '').trim()).slice(0, 128);
   return {
-    apiKey: decryptStoredApiKey(settings),
+    apiKey: settings.asrProvider && settings.asrProvider !== 'dashscope-realtime' ? decryptStoredSecret(settings.encryptedApiKey).trim() : decryptStoredApiKey(settings),
+    provider: inferProvider(settings.asrProvider, '', 'asr'),
+    baseURL: String(settings.asrBaseUrl || ''),
+    model: String(settings.asrModel || (settings.asrProvider === 'openai' ? 'gpt-4o-mini-transcribe' : 'qwen3-asr-flash-realtime')),
     workspaceId: /^[A-Za-z0-9_-]{0,128}$/.test(workspaceId) ? workspaceId : '',
     region,
   };
@@ -3523,16 +3730,21 @@ function publicTranscriptionConfig() {
   const llmConfig = resolveLlmConfig();
   const settings = readStoredTranscriptionSettings();
   return {
-    configured: Boolean(config.apiKey),
-    asrNeedsReentry: Boolean(settings.encryptedApiKey && !config.apiKey),
+    configured: Boolean((config.apiKey||config.keyOptional)&&config.model),
+    asrNeedsReentry: config.needsReentry===true||(!aiServices().exists()&&Boolean(settings.encryptedApiKey && !config.apiKey)),
     workspaceId: config.workspaceId,
     region: config.region,
-    provider: 'qwen3-asr-flash-realtime',
+    provider: config.provider,
+    asrProvider: config.provider,
+    asrBaseUrl: config.baseURL,
+    asrModel: config.model,
+    asrMode: config.provider === 'dashscope-realtime' ? 'realtime' : 'file',
     secureStorage: safeStorage.isEncryptionAvailable(),
-    llmConfigured: Boolean(llmConfig.apiKey),
-    llmNeedsReentry: Boolean(settings.encryptedLlmApiKey && !llmConfig.apiKey),
-    llmBaseUrl: String(settings.llmBaseUrl || 'https://api.deepseek.com'),
-    llmModel: String(settings.llmModel || 'deepseek-v4-flash'),
+    llmConfigured: Boolean((llmConfig.apiKey||llmConfig.keyOptional)&&llmConfig.model),
+    llmNeedsReentry: llmConfig.needsReentry===true||(!aiServices().exists()&&Boolean(settings.encryptedLlmApiKey && !llmConfig.apiKey)),
+    llmBaseUrl: llmConfig.baseUrl,
+    llmModel: llmConfig.model,
+    llmProvider: llmConfig.provider,
   };
 }
 
@@ -3544,7 +3756,7 @@ function transcriptionUrl(config) {
     : config.region === 'singapore'
       ? 'dashscope-intl.aliyuncs.com'
       : 'dashscope.aliyuncs.com';
-  return `wss://${host}/api-ws/v1/realtime?model=${TRANSCRIPTION_MODEL}&heartbeat=true`;
+  return `wss://${host}/api-ws/v1/realtime?model=${encodeURIComponent(config.model||TRANSCRIPTION_MODEL)}&heartbeat=true`;
 }
 
 function transcriptionEventId() {
@@ -3567,7 +3779,9 @@ function closeTranscriptionSession(session, result = {}) {
   clearTimeout(session.connectTimer);
   clearTimeout(session.finishTimer);
   transcriptionSessions.delete(session.senderId);
-  try { session.socket.close(); } catch (error) {}
+  session.controller?.abort();
+  if (session.chunks) session.chunks = [];
+  try { session.socket?.close(); } catch (error) {}
   if (session.finishResolve) {
     session.finishResolve({
       ok: result.ok !== false,
@@ -3618,22 +3832,34 @@ function handleTranscriptionMessage(session, raw) {
   }
 }
 
-ipcMain.handle('transcription:get-config', () => publicTranscriptionConfig());
+ipcMain.handle('transcription:get-config', event => isMainRenderer(event) ? publicTranscriptionConfig() : {ok:false,error:'forbidden'});
 
 ipcMain.handle('transcription:set-config', (event, payload) => {
+  if(!isMainRenderer(event))return {ok:false,error:'forbidden'};
   const previous = readStoredTranscriptionSettings();
-  const region = payload && payload.region === 'singapore' ? 'singapore' : 'beijing';
-  const workspaceId = String(payload && payload.workspaceId || '').trim();
+  const has = name=>Object.prototype.hasOwnProperty.call(payload||{},name);
+  const region = has('region') ? (payload.region==='singapore'?'singapore':'beijing') : (previous.region||'beijing');
+  const workspaceId = String(has('workspaceId') ? payload.workspaceId || '' : previous.workspaceId || '').trim();
   const apiKey = String(payload && payload.apiKey || '').trim();
   const llmApiKey = String(payload && payload.llmApiKey || '').trim();
   const llmBaseUrl = String(payload && payload.llmBaseUrl || previous.llmBaseUrl || 'https://api.deepseek.com').trim();
   const llmModel = String(payload && payload.llmModel || previous.llmModel || 'deepseek-v4-flash').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const asrProvider = has('asrProvider') ? String(payload.asrProvider) : inferProvider(previous.asrProvider, '', 'asr');
+  const llmProvider = has('llmProvider') ? String(payload.llmProvider) : inferProvider(previous.llmProvider, llmBaseUrl);
+  if (!API_PROVIDER_PRESETS.asr.some(item => item.id === asrProvider) || !API_PROVIDER_PRESETS.llm.some(item => item.id === llmProvider)) return { ok: false, error: 'invalid_provider' };
+  let asrBaseUrl = String(has('asrBaseUrl') ? payload.asrBaseUrl || '' : previous.asrBaseUrl || '').trim();
+  const asrModel = String(has('asrModel') ? payload.asrModel || '' : previous.asrModel || (asrProvider === 'dashscope-realtime' ? TRANSCRIPTION_MODEL : '')).trim();
+  if (asrModel.length > 200 || /[\r\n]/.test(asrModel) || ((apiKey || llmApiKey).length > 4096) || /[\r\n]/.test(apiKey + llmApiKey)) return { ok: false, error: 'invalid_config' };
+  if (asrProvider !== 'dashscope-realtime') {
+    try { asrBaseUrl = normalizeApiEndpoint(asrBaseUrl); } catch (_) { return { ok: false, error: 'invalid_asr_url' }; }
+    if (!asrModel) return { ok: false, error: 'invalid_asr_model' };
+  }
   if (workspaceId && !/^[A-Za-z0-9_-]{1,128}$/.test(workspaceId)) {
     return { ok: false, error: 'invalid_workspace' };
   }
   let parsedLlmUrl;
   try { parsedLlmUrl = new URL(llmBaseUrl); } catch (error) { parsedLlmUrl = null; }
-  if (!parsedLlmUrl || parsedLlmUrl.protocol !== 'https:' || parsedLlmUrl.username || parsedLlmUrl.password) {
+  if (!parsedLlmUrl || !['https:', 'http:'].includes(parsedLlmUrl.protocol) || parsedLlmUrl.username || parsedLlmUrl.password || parsedLlmUrl.search || parsedLlmUrl.hash || (parsedLlmUrl.protocol === 'http:' && !['localhost','127.0.0.1','[::1]'].includes(parsedLlmUrl.hostname))) {
     return { ok: false, error: 'invalid_llm_url' };
   }
   if ((apiKey || llmApiKey) && !safeStorage.isEncryptionAvailable()) {
@@ -3642,17 +3868,23 @@ ipcMain.handle('transcription:set-config', (event, payload) => {
   const next = {
     region,
     workspaceId,
-    encryptedApiKey: apiKey
+    asrProvider, asrBaseUrl, asrModel,
+    encryptedApiKey: payload?.clearApiKey===true ? '' : apiKey
       ? safeStorage.encryptString(apiKey).toString('base64')
       : String(previous.encryptedApiKey || ''),
     llmBaseUrl: parsedLlmUrl.toString().replace(/\/$/, ''),
     llmModel,
-    encryptedLlmApiKey: llmApiKey
+    llmProvider,
+    encryptedLlmApiKey: payload?.clearLlmApiKey===true ? '' : llmApiKey
       ? safeStorage.encryptString(llmApiKey).toString('base64')
       : String(previous.encryptedLlmApiKey || ''),
   };
   try {
-    fs.writeFileSync(getTranscriptionSettingsPath(), JSON.stringify(next), { mode: 0o600 });
+    if(!writeJsonFile(getTranscriptionSettingsPath(),next))throw new Error('save_failed');
+    if(aiServices().exists()){
+      if(['apiKey','clearApiKey','asrProvider','asrBaseUrl','asrModel','region','workspaceId'].some(has))aiServices().syncLegacy('asr',{provider:next.asrProvider,baseURL:next.asrBaseUrl,model:next.asrModel,encryptedKey:next.encryptedApiKey,region:next.region,workspaceId:next.workspaceId});
+      if(['llmApiKey','clearLlmApiKey','llmProvider','llmBaseUrl','llmModel'].some(has))aiServices().syncLegacy('llm',{provider:next.llmProvider,baseURL:next.llmBaseUrl,model:next.llmModel,encryptedKey:next.encryptedLlmApiKey});
+    }
     return { ok: true, ...publicTranscriptionConfig() };
   } catch (error) {
     return { ok: false, error: 'save_failed' };
@@ -3660,10 +3892,16 @@ ipcMain.handle('transcription:set-config', (event, payload) => {
 });
 
 ipcMain.handle('transcription:start', (event) => {
+  if (!isMainRenderer(event)) return { ok: false, error: 'forbidden' };
   const config = resolveTranscriptionConfig();
-  if (!config.apiKey) return { ok: false, error: 'not_configured' };
+  if (!config.apiKey&&!config.keyOptional) return { ok: false, error: 'not_configured' };
   const existing = transcriptionSessions.get(event.sender.id);
   if (existing) closeTranscriptionSession(existing, { ok: false, error: 'replaced' });
+  if (config.provider !== 'dashscope-realtime') {
+    if (!config.baseURL || !config.model) return { ok: false, error: 'not_configured' };
+    transcriptionSessions.set(event.sender.id, { sender: event.sender, senderId: event.sender.id, mode: 'file', config, ready: true, closed: false, chunks: [], totalBytes: 0, finalSegments: [], interim: '' });
+    return { ok: true, mode: 'file' };
+  }
   return new Promise((resolve) => {
     const headers = {
       Authorization: `Bearer ${config.apiKey}`,
@@ -3730,10 +3968,20 @@ ipcMain.handle('transcription:start', (event) => {
 });
 
 ipcMain.on('transcription:audio', (event, bytes) => {
+  if (!isMainRenderer(event)) return;
   const session = transcriptionSessions.get(event.sender.id);
-  if (!session || !session.ready || session.closed || session.socket.readyState !== WebSocket.OPEN) return;
+  if (!session || !session.ready || session.closed || session.finishing) return;
   const buffer = Buffer.from(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes || []);
-  if (!buffer.length || buffer.length > 512 * 1024) return;
+  if (!buffer.length || buffer.length > 512 * 1024 || buffer.length % 2) return;
+  if (session.mode === 'file') {
+    session.totalBytes += buffer.length;
+    if (session.totalBytes > MAX_PCM_BYTES) {
+      session.lastError = '文件转写最多支持 10 分钟；本地录音继续保存。'; session.chunks = []; session.ready = false;
+      emitTranscription(session, { type: 'error', message: session.lastError }); return;
+    }
+    session.chunks.push(buffer); return;
+  }
+  if (session.socket.readyState !== WebSocket.OPEN) return;
   session.socket.send(JSON.stringify({
     event_id: transcriptionEventId(),
     type: 'input_audio_buffer.append',
@@ -3742,9 +3990,19 @@ ipcMain.on('transcription:audio', (event, bytes) => {
 });
 
 ipcMain.handle('transcription:finish', (event) => {
+  if (!isMainRenderer(event)) return { ok: false, error: 'forbidden' };
   const session = transcriptionSessions.get(event.sender.id);
   if (!session || session.closed) return { ok: false, error: 'not_active', transcript: '' };
   if (session.finishResolve) return { ok: false, error: 'already_finishing', transcript: sessionTranscript(session) };
+  if (session.mode === 'file') {
+    if (session.finishing) return { ok: false, error: 'already_finishing' };
+    if (session.lastError || !session.totalBytes) { closeTranscriptionSession(session, { ok: false }); return { ok: false, error: session.lastError || '未收到可转写的音频，本地录音仍会保存。' }; }
+    session.finishing = true; session.controller = new AbortController();
+    const pcm = Buffer.concat(session.chunks); session.chunks = [];
+    return transcribePcm(session.config, pcm, { fetchImpl:fetchAI,signal: session.controller.signal }).then(result => {
+      closeTranscriptionSession(session, { ok: result.ok }); return result;
+    });
+  }
   return new Promise((resolve) => {
     session.finishResolve = resolve;
     session.finishTimer = setTimeout(() => {
@@ -3759,10 +4017,46 @@ ipcMain.handle('transcription:finish', (event) => {
 });
 
 function closeAllTranscriptionSessions() {
+  apiConnectionTester?.dispose();
   for (const session of transcriptionSessions.values()) {
     closeTranscriptionSession(session, { ok: false, error: 'app_quit' });
   }
 }
+ipcMain.handle('transcription:cancel', event => {
+  if (!isMainRenderer(event)) return { ok: false, error: 'forbidden' };
+  const session = transcriptionSessions.get(event.sender.id); if (session) closeTranscriptionSession(session, { ok: false, error: 'cancelled' });
+  return { ok: true };
+});
+const apiConnectionTester = createConnectionTester({ WebSocketImpl: WebSocket,fetchImpl:fetchAI, resolveConfig(capability) {
+  if(capability==='prompt')return aiServices().resolve('prompt')||{};
+  if (capability === 'asr') return resolveTranscriptionConfig();
+  if (capability === 'reports') return reportsV15?.connectionConfig?.() || {};
+  const config = resolveLlmConfig(); return { ...config, baseURL: config.baseUrl };
+} });
+ipcMain.handle('api:provider-presets', event => isMainRenderer(event) ? { ok: true, presets: API_PROVIDER_PRESETS } : { ok: false, error: 'forbidden' });
+ipcMain.handle('api:test-connection', (event, payload) => isMainRenderer(event) ? apiConnectionTester.test(payload, event.sender.id) : { ok: false, error: 'forbidden' });
+ipcMain.handle('api:cancel-test', event => isMainRenderer(event) ? apiConnectionTester.cancel(event.sender.id) : { ok: false, error: 'forbidden' });
+ipcMain.handle('ai:hub-get',event=>isMainRenderer(event)?aiServices().getState():{ok:false,error:'forbidden'});
+ipcMain.handle('ai:service-save',(event,payload)=>isMainRenderer(event)?aiServices().saveService(payload):{ok:false,error:'forbidden'});
+ipcMain.handle('ai:bindings-save',(event,payload)=>isMainRenderer(event)?aiServices().assign(payload):{ok:false,error:'forbidden'});
+ipcMain.handle('ai:service-remove',(event,payload)=>isMainRenderer(event)?aiServices().remove(payload):{ok:false,error:'forbidden'});
+ipcMain.handle('ai:models-list',async(event,payload)=>{
+  if(!isMainRenderer(event))return {ok:false,error:'forbidden'};const owner=event.sender.id;if(aiModelJobs.has(owner))return {ok:false,error:'正在读取模型，请等待或取消。'};
+  const controller=new AbortController();aiModelJobs.set(owner,controller);const timer=setTimeout(()=>controller.abort('timeout'),15000);
+  try{const config=aiServices().draftConfig(payload);const models=await listModels(config,{fetchImpl:fetchAI,signal:controller.signal});if(controller.signal.aborted)throw Error('cancelled');return {ok:true,models};}
+  catch(error){return modelListFailure(error,{aborted:controller.signal.aborted,timedOut:controller.signal.reason==='timeout'});}
+  finally{clearTimeout(timer);if(aiModelJobs.get(owner)===controller)aiModelJobs.delete(owner);}
+});
+ipcMain.handle('ai:service-test',(event,payload)=>{if(!isMainRenderer(event))return {ok:false,error:'forbidden'};try{const config=aiServices().draftConfig(payload);return apiConnectionTester.test({...config,capability:config.protocol==='realtime'?'asr':payload.capability==='asr'?'asr':'llm'},event.sender.id,true);}catch(error){return {ok:false,error:error.message};}});
+ipcMain.handle('ai:hub-cancel',event=>{if(!isMainRenderer(event))return {ok:false,error:'forbidden'};aiModelJobs.get(event.sender.id)?.abort();return apiConnectionTester.cancel(event.sender.id);});
+ipcMain.handle('prompt:config',event=>{
+  if(!isMainRenderer(event))return {ok:false,error:'forbidden'};const state=aiServices().getState();if(!state.ok)return {...state,configured:false};
+  try{const config=aiServices().resolve('prompt');const service=state.services.find(s=>s.id===config?.serviceId);return {ok:true,configured:aiConfigReady(config),model:config?.model||'',service:service?.name||'',local:config?.keyOptional===true};}catch{return {ok:false,configured:false,error:'AI 配置无法读取，请检查设置。'};}
+});
+ipcMain.handle('prompt:optimize',(event,payload)=>isMainRenderer(event)?promptOptimizer.optimize(payload,event.sender.id):{ok:false,error:'forbidden'});
+ipcMain.handle('prompt:cancel',event=>isMainRenderer(event)?promptOptimizer.cancel(event.sender.id):{ok:false,error:'forbidden'});
+ipcMain.handle('copy-feedback:status',event=>isMainRenderer(event)?copyFeedback.status():{supported:false,running:false});
+ipcMain.handle('copy-feedback:theme',(event,value)=>{if(!isMainRenderer(event))return false;copyFeedback.setTheme(value);return true;});
 
 // ============ 录音资料库 ============
 function getRecordingsDir() {
@@ -4095,6 +4389,7 @@ function stopHoverSpaceShortcut() {
 }
 
 function syncHoverSpacePolling() {
+  if (panelPullSession) { stopHoverSpaceShortcut(); return; }
   const policy = hoverSpacePollingPolicy({
     shortcut: configuredShortcut,
     visible: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()),
@@ -4267,6 +4562,9 @@ app.whenReady().then(() => {
   }
 
   ensureFirstRunAutoLaunch();
+  initializeTaskServices();
+  powerMonitor.on('resume',()=>{todoRemindersV15?.checkNow();if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('v15:resume');});
+  powerMonitor.on('unlock-screen',()=>todoRemindersV15?.checkNow());
   createWindow();
   createHotzoneWindow();
   createTray();
@@ -4289,6 +4587,11 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {});
 
 app.on('before-quit', () => {
+  copyFeedback.dispose();
+  clearPanelPull(false);
+  todoRemindersV15?.dispose();reportsV15?.dispose();
+  promptOptimizer.dispose();for(const controller of aiModelJobs.values())controller.abort();
+  for(const pending of taskActionRequests.values())pending.finish({ok:false,error:'Slate 正在退出'});
   translationService?.release();
   isQuitting = true;
   if (quickCaptureWindow && !quickCaptureWindow.isDestroyed()) quickCaptureWindow.destroy();

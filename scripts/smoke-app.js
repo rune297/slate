@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const WebSocket = require('ws');
+const http = require('node:http');
 const executable = process.argv[2];
 if (!executable) throw new Error('Usage: node scripts/smoke-app.js <executable> [profile] [retained]');
 const profile = process.argv[3] || fs.mkdtempSync(path.join(os.tmpdir(), 'todo-smoke-'));
@@ -37,11 +38,15 @@ async function until(fn, label, timeout = 25000) {
   throw new Error(`Timed out: ${label}; ${last || log.slice(-2000)}`);
 }
 let socket;
+let aiTestServer;
+let nativePointer;
 let sequence = 0;
 const pending = new Map();
 const exceptions = [];
 const deadline = setTimeout(() => { console.error('Application smoke timed out'); cleanup(); process.exit(1); }, 150000);
 function cleanup() {
+  nativePointer?.close();nativePointer=null;
+  aiTestServer?.closeAllConnections();aiTestServer?.close();
   clearTimeout(deadline);
   socket?.close();
   fs.writeFileSync(path.join(evidence, retained ? 'retained.log' : 'app.log'), log);
@@ -85,20 +90,38 @@ async function main() {
     else call?.resolve(value.result);
   });
   await send('Runtime.enable');
-  await until(() => evaluate('Boolean(window.SlateHome && window.SlateWorkspace && window.slateAPI)'), 'renderer initialization');
+  await until(() => evaluate("Boolean(window.SlateHome && window.SlateWorkspace && window.slateAPI && document.readyState === 'complete' && typeof workspaceHydrating !== 'undefined' && !workspaceHydrating && !workspaceReloadPending)"), 'renderer initialization and workspace recovery');
   assert.equal(await evaluate('window.slateAPI.platform'), 'win32');
+  assert.equal(await evaluate("typeof window.SlateSampleLogic === 'undefined' && typeof window.slateAPI.getSampleResources === 'undefined' && !document.querySelector('script[src*=\"sample-data\"], [id^=\"samples-\"]')"), true, 'the release has no sample generator or demo entry');
+  fs.writeFileSync(path.join(evidence, `no-demo-${retained ? 'retained' : 'fresh'}.json`), JSON.stringify({ ok: true }));
+  await until(() => evaluate('window.slateAPI.getCopyFeedbackStatus().then(s=>s.supported&&s.running)'), 'packaged native clipboard listener');
+  assert.equal(await evaluate('!!window.SlateSnippets && Object.values(window.SlateReportsLogic.DEFAULT_FORMATS).every(s=>!/^#{1,6}\\s/m.test(s))'), true, 'packaged snippets and plain-text templates');
   assert.equal(await evaluate('window.slateAPI.getAppSettings().then(s => s.features.clip)'), true);
   assert.equal(await evaluate('window.slateAPI.getAppSettings().then(s => s.clipboard.captureEnabled)'), false);
-  assert.deepEqual(await evaluate('window.SlateHome.getVisibility().visibleIds'), ['launcher', 'note']);
+  assert.deepEqual(await evaluate('window.SlateHome.getVisibility().visibleIds'), ['tasks', 'launcher', 'note', 'translation']);
+  assert.equal(await evaluate('document.querySelector("#home-bento [data-home-module=recorder]")'), null);
   assert.equal(await evaluate('window.SlateHome.setModuleVisible("windows", true).ok'), false);
   assert.equal(await evaluate('window.slateAPI.listWindows().then(r => r.error)'), 'unsupported');
   await evaluate('document.getElementById("slate").click()');
   await until(() => evaluate('document.getElementById("app").classList.contains("expanded")'), 'expand');
-  assert.equal(await evaluate('window.slateAPI.getMetrics().then(m => m.stripHeight)'), 38);
+  await evaluate('setPanelPinned(true)');
+  assert.equal(await evaluate('window.slateAPI.getMetrics().then(m => m.stripHeight)'), 8);
   assert.deepEqual(await evaluate('window.slateAPI.pasteClipboard({type:"text", text:"Windows smoke copy"})'), { ok: true, pasted: false });
-  assert.equal(await evaluate('window.slateAPI.setAutoLaunch(true).then(r => r.ok)'), true);
-  assert.equal(await evaluate('window.slateAPI.getAppSettings().then(r => r.autoLaunch)'), true);
-  assert.equal(await evaluate('window.slateAPI.setAutoLaunch(false).then(r => r.ok)'), true);
+  const feedbackPage = await until(async () => (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(page => page.url.endsWith('/renderer/copy-feedback.html')), 'packaged desktop copy feedback window');
+  assert.ok(feedbackPage.webSocketDebuggerUrl, 'packaged copy feedback renderer loads from the archive');
+  const hubFile=path.join(profile,'ai-services.json'),originalHub=fs.readFileSync(hubFile,'utf8'),aiCalls=[];
+  aiTestServer=http.createServer((request,response)=>{let raw='';request.on('data',bytes=>raw+=bytes);request.on('end',()=>{const body=raw?JSON.parse(raw):null;aiCalls.push({url:request.url,model:body?.model,keyMatches:request.headers.authorization==='Bearer packaged-fixture-key'});response.setHeader('Content-Type','application/json');response.end(JSON.stringify(request.method==='GET'?{data:[{id:'packaged-prompt'},{id:'packaged-report'}]}:{choices:[{message:{content:body.model==='packaged-report'?'Packaged report result':'Packaged prompt result'},finish_reason:'stop'}]}));});});
+  await new Promise(resolve=>aiTestServer.listen(0,'127.0.0.1',resolve));
+  try{
+    const saved=await evaluate(`window.slateAPI.saveAIService(${JSON.stringify({provider:'custom',name:'Packaged QA only',baseURL:'http://127.0.0.1:'+aiTestServer.address().port+'/v1',apiKey:'packaged-fixture-key',defaultModel:'packaged-prompt'})})`);assert.equal(saved.ok,true);
+    assert.doesNotMatch(JSON.stringify(saved),/packaged-fixture-key|encryptedKey/,'saved keys never return to renderer');assert.doesNotMatch(fs.readFileSync(hubFile,'utf8'),/packaged-fixture-key/,'packaged service credentials are encrypted');
+    assert.equal((await evaluate(`window.slateAPI.saveAIBindings(${JSON.stringify({bindings:{prompt:{serviceId:saved.savedId,model:'packaged-prompt'},reports:{serviceId:saved.savedId,model:'packaged-report'}}})})`)).ok,true);
+    assert.equal((await evaluate(`window.slateAPI.listAIModels(${JSON.stringify({id:saved.savedId,provider:'custom',model:'packaged-prompt'})})`)).models.length,2);
+    const prompt=await evaluate('window.slateAPI.optimizePrompt({text:"Rewrite this test prompt. Keep {{value}} unchanged."})');assert.equal(prompt.text,'Packaged prompt result');
+    const report=await evaluate('window.slateAPI.reportGenerate({tasks:[],period:"day",date:window.SlateReportsLogic.dateKey()})');assert.equal(report.text,'Packaged report result');assert.ok(aiCalls.every(call=>call.keyMatches));assert.deepEqual(aiCalls.filter(call=>call.model).map(call=>call.model),['packaged-prompt','packaged-report']);
+    fs.writeFileSync(path.join(evidence,retained?'ai-retained.json':'ai-fresh.json'),JSON.stringify({providerTemplateAndRegistry:true,encryptedKey:true,modelDiscovery:true,assignedPromptModel:true,assignedReportModel:true,transport:'real isolated local HTTP'},null,2));
+  }finally{fs.writeFileSync(hubFile,originalHub);aiTestServer.closeAllConnections();aiTestServer.close();aiTestServer=null;}
+  assert.equal(typeof await evaluate('window.slateAPI.getAppSettings().then(r => r.autoLaunch)'), 'boolean', 'read native startup preference without changing the desktop registration');
   assert.equal(await evaluate('window.slateAPI.setPanelShortcut("Control+Shift+F9").then(r => r.ok)'), true);
   assert.equal(await evaluate('window.slateAPI.setClipShortcut("Control+Shift+F10").then(r => r.ok)'), true);
   assert.equal(await evaluate('window.slateAPI.setClipShortcut("").then(r => r.ok)'), true);
@@ -124,7 +147,7 @@ async function main() {
         const stream = await original(...args); window.smokeTracks.push(...stream.getTracks()); return stream;
       };
     })()`);
-    await evaluate('window.SlateHome.setModuleVisible("recorder", true); document.getElementById("tab-button-home").click(); document.getElementById("record-start").click()');
+    await evaluate('document.getElementById("tab-button-home").click(); document.getElementById("record-start").click()');
     await until(() => evaluate('window.SlateWorkspace.isRecordingActive() && window.smokeTracks.some(t => t.kind === "audio" && t.readyState === "live")'), 'fake recording starts');
     await delay(1500);
     await evaluate('document.getElementById("record-stop").click()');
@@ -141,10 +164,31 @@ async function main() {
   await until(() => evaluate('window.slateAPI.listTaskCompletions().then(r => r.some(i => i.title === "Windows smoke complete"))'), 'notification recorded');
   await evaluate('document.getElementById("tab-button-settings").click()');
   await delay(300);
-  assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-settings-home-module]")).filter(i => !i.closest("label").hidden && i.checked).map(i => i.dataset.settingsHomeModule)'), retained ? ['launcher', 'note'] : ['launcher', 'recorder', 'note']);
+  assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-settings-home-module]")).filter(i => !i.closest("label").hidden && i.checked).map(i => i.dataset.settingsHomeModule).sort()'), ['launcher', 'note', 'tasks', 'translation']);
+  assert.equal(await evaluate('document.querySelectorAll("#settings-todo-reminders input").length'), 3);
+  assert.equal(await evaluate('!!window.SlateApiSettings && !!window.SlatePull'), true);
+  await evaluate('window.SlateSettingsNavigation.open("ai")');
+  assert.equal(await evaluate('document.getElementById("settings-api-configure").checkVisibility()'), true);
+  assert.equal(await evaluate('document.getElementById("settings-report-prompt-mode").checkVisibility()'), true);
+  assert.equal(await evaluate('window.SlateSettingsNavigation.getSelected()'), 'ai');
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(evidence, retained ? 'retained.png' : 'windows-settings.png'), Buffer.from(screenshot.data, 'base64'));
   assert.deepEqual(exceptions, [], 'No uncaught renderer errors');
+  if(process.platform==='win32'){
+    await evaluate("setPanelPinned(false);setActiveTab('home')");
+    await until(()=>evaluate("isExpanded&&!modeBusy&&!window.SlatePull.isDragging()"),'packaged panel ready for native outside press');
+    const bounds=await evaluate('({x:screenX,y:screenY,width:outerWidth,height:outerHeight,scale:devicePixelRatio})');
+    const pointerScreen={dipToScreenPoint:point=>({x:Math.round(point.x*bounds.scale),y:Math.round(point.y*bounds.scale)})},nativeWindow={getContentBounds:()=>bounds};
+    nativePointer=require('../tests/native-pointer.cjs').createNativePointer(profile,pointerScreen);
+    const point={x:-8,y:Math.round(bounds.height/2)};
+    nativePointer.send('mouseMove',point,nativeWindow);
+    const hit=await nativePointer.inspect(point,nativeWindow);assert.equal(hit.rootPid,child.pid,'the real outside click must hit this packaged instance, never another app');
+    nativePointer.send('mouseDown',point,nativeWindow);nativePointer.send('mouseUp',point,nativeWindow);await nativePointer.inspect(point,nativeWindow);
+    await until(()=>evaluate("!isExpanded&&!modeBusy&&document.getElementById('panel').inert"),'packaged native outside click collapses');
+    const dismissLog=fs.readFileSync(path.join(profile,'dismiss-debug.log'),'utf8');assert.match(dismissLog,/dismiss:native-press/);
+    fs.writeFileSync(path.join(evidence,retained?'native-dismiss-retained.json':'native-dismiss-fresh.json'),JSON.stringify({ok:true,realWindowsMouse:true,ownWindowMessage:true,exactOutsideEdge:true},null,2));
+    nativePointer.close();nativePointer=null;
+  }
   // Exercise an ordinary application shutdown, not taskkill /F: Chromium flushes
   // profile preferences (including Windows OS-crypt metadata) during shutdown.
   // Browser.close is Electron's own CDP shutdown path; no testing IPC is shipped.
@@ -155,7 +199,7 @@ async function main() {
   await until(() => child.exitCode !== null, 'normal application exit');
   shutdown.close();
   assert.equal(child.exitCode, 0, 'Application exits cleanly before reinstall/uninstall');
-  fs.writeFileSync(path.join(evidence, retained ? 'retained.json' : 'smoke.json'), JSON.stringify({ ok: true, platform: process.platform, retained, profile, checks: ['real startup', 'five home modules', 'IPC', 'clipboard copy', 'auto-launch', 'shortcuts', 'encrypted credentials', 'fake camera release', 'fake recording release and persistence', 'notifications', 'settings'] }, null, 2));
+  fs.writeFileSync(path.join(evidence, retained ? 'retained.json' : 'smoke.json'), JSON.stringify({ ok: true, platform: process.platform, retained, profile, checks: ['real startup', 'four home modules and topbar recorder', 'IPC', 'clipboard copy', 'auto-launch', 'shortcuts', 'encrypted credentials', 'fake recording release and persistence', 'notifications', 'unified API and simplified reminders'] }, null, 2));
   console.log(`Windows application smoke passed (${retained ? 'retained profile' : 'fresh profile'})`);
 }
 main().catch(async (error) => {

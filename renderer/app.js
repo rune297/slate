@@ -1,28 +1,9 @@
 const STORAGE_KEY = 'slate-todo-data';
 const TODO_CATEGORY_KEY = 'slate-todo-category-names-v1';
-const TODO_CATEGORY_DEFAULTS = {
-  P0: '课程',
-  P1: '自媒体&写作',
-  P2: 'Vibe coding',
-  P3: '日常',
-};
-// 分类列表动态化：默认 4 个，可增删。id 稳定（存储桶键），名字可改。
-// 列表本身持久化在 localStorage（v2），重启后自建分类不丢。
+const TODO_CATEGORY_DEFAULTS = { P0:'课程', P1:'自媒体&写作', P2:'Vibe coding', P3:'未分组' };
 const TODO_CATEGORY_LIST_KEY = 'slate-todo-categories-v2';
-function loadTodoCategories() {
-  try {
-    const list = JSON.parse(localStorage.getItem(TODO_CATEGORY_LIST_KEY) || 'null');
-    if (Array.isArray(list) && list.length && list.every((id) => typeof id === 'string' && id)) {
-      return [...new Set(list)];
-    }
-  } catch (error) {
-    /* 损坏则回退默认 */
-  }
-  return ['P0', 'P1', 'P2', 'P3'];
-}
-let PRIORITIES = loadTodoCategories();
-// 分类圆点调色板（按序取色，新增分类自动获得颜色）
-const CATEGORY_COLORS = ['#d84038', '#e07a2e', '#1d9e63', '#2f6fdb', '#8a5cd6', '#0f8a8a', '#b8860b'];
+let todoCategorySnapshot = window.SlateCategoryLogic.readState(localStorage);
+let PRIORITIES = [...todoCategorySnapshot.ids];
 
 // 存储键在重命名后统一为 slate-*，这里把历史 notch-* 数据搬过来，老用户不丢数据。
 function migrateLegacyStorageKeys() {
@@ -46,6 +27,8 @@ function migrateLegacyStorageKeys() {
   }
 }
 migrateLegacyStorageKeys();
+todoCategorySnapshot=window.SlateCategoryLogic.readState(localStorage);
+PRIORITIES=[...todoCategorySnapshot.ids];
 
 const app = document.getElementById('app');
 const slate = document.getElementById('slate');
@@ -106,7 +89,7 @@ async function hydratePortableWorkspace() {
       }
     }, 5000);
   } catch (error) {}
-  finally { workspaceHydrating = false; }
+  finally { if (!workspaceReloadPending) persistTodoCategoryMigration(); workspaceHydrating = false; }
 }
 // Do not interrupt parser-loaded workspace scripts with a recovery navigation.
 if (document.readyState === 'loading') {
@@ -180,21 +163,20 @@ if (statusToastAction) {
 window.addEventListener('beforeunload', () => dismissStatusToast(true));
 
 function loadData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const result = {};
-    PRIORITIES.forEach((bucket) => {
-      result[bucket] = raw ? normalizeTodoItems(JSON.parse(raw)[bucket]) : [];
-    });
-    // Persist the one-time migration only when a task snapshot already exists.
-    // A fresh page must remain empty until portable-workspace recovery completes.
-    if (raw && JSON.stringify(result) !== raw) localStorage.setItem(STORAGE_KEY,JSON.stringify(result));
-    return result;
-  } catch (e) {
-    const result = {};
-    PRIORITIES.forEach((bucket) => { result[bucket] = []; });
-    return result;
-  }
+  const source = todoCategorySnapshot.data, result = {P0:[],P1:[],P2:[],P3:[]};
+  for (const bucket of PRIORITIES) result[bucket] = normalizeTodoItems(source[bucket]);
+  return result;
+}
+function persistTodoCategoryMigration() {
+  if (todoCategorySnapshot.readOnly || !todoCategorySnapshot.hasSource || workspaceReloadPending) return;
+  const updates = {
+    [TODO_CATEGORY_KEY]: todoCategoryNames,
+    [TODO_CATEGORY_LIST_KEY]: PRIORITIES,
+  };
+  if (todoCategorySnapshot.raw[STORAGE_KEY] !== null) updates[STORAGE_KEY] = data;
+  if (todoCategorySnapshot.movedP3 && Array.isArray(todoCategorySnapshot.rules)) updates[window.SlateCategoryLogic.KEYS.rules] = todoCategorySnapshot.rules;
+  const saved = window.SlateCategoryLogic.transaction(localStorage, updates);
+  if (!saved.ok) showStatusToast('分类迁移未保存，原数据已保留，请重试', true);
 }
 
 function normalizeTodoItems(value) {
@@ -211,6 +193,7 @@ function normalizeTodoItems(value) {
       const text = item.text.trim();
       if (!text) return null;
       return window.SlateWorkflow.normalizeTodo({
+        ...item,
         id: typeof item.id === 'string' && item.id ? item.id : generateId(),
         text,
         done: item.done === true,
@@ -232,9 +215,25 @@ function normalizeTodoItems(value) {
         planDate: item.planDate,
         planWeek: item.planWeek,
         planAddedAt: item.planAddedAt,
+        planHistory: item.planHistory,
+        attachments: Array.isArray(item.attachments) ? item.attachments.slice(0,8) : [],
+        recurrenceId: typeof item.recurrenceId === 'string' ? item.recurrenceId : '',
+        occurrenceDate: item.occurrenceDate,
       });
     })
     .filter(Boolean);
+}
+
+let reminderSnapshotSignature='';
+function syncTodoReminders(source=data) {
+  const tasks=PRIORITIES.flatMap(bucket=>source[bucket]||[]).map(item=>{
+    const result={};for(const field of ['id','text','done','createdAt','planAddedAt','deadline','followupAt','planKind','planDate','planWeek','focusDate','pinnedToday'])result[field]=item[field];return result;
+  });
+  const theme=document.documentElement.dataset.theme==='dark'?'dark':'light',signature=JSON.stringify({tasks,theme});
+  if(signature===reminderSnapshotSignature)return;
+  reminderSnapshotSignature=signature;
+  const request=window.slateAPI?.updateReminderTasks ? window.slateAPI.updateReminderTasks({tasks,theme}) : window.slateAPI?.scheduleTodoReminders?.(tasks);
+  request?.catch(()=>{if(reminderSnapshotSignature===signature)reminderSnapshotSignature='';});
 }
 
 function saveData(data) {
@@ -243,10 +242,7 @@ function saveData(data) {
   } catch (e) {
     return false;
   }
-  if (window.slateAPI && typeof window.slateAPI.scheduleTodoReminders === 'function') {
-    const reminders = PRIORITIES.flatMap((priority) => data[priority] || []);
-    window.slateAPI.scheduleTodoReminders(reminders).catch(() => {});
-  }
+  syncTodoReminders(data);
   document.dispatchEvent(new CustomEvent('slate:tasks-changed'));
   return true;
 }
@@ -261,40 +257,15 @@ let todoTag = 'all';
 let todoStatusFilter = 'all';
 let expandedTodoId = '';
 
-function loadTodoCategoryNames() {
-  try {
-    const source = JSON.parse(localStorage.getItem(TODO_CATEGORY_KEY) || 'null') || {};
-    const out = {};
-    PRIORITIES.forEach((id) => {
-      const raw = String(source[id] || '').replace(/\s+/g, ' ').trim();
-      out[id] = (raw || TODO_CATEGORY_DEFAULTS[id] || id).slice(0, 24);
-    });
-    return out;
-  } catch (error) {
-    const out = {};
-    PRIORITIES.forEach((id) => { out[id] = TODO_CATEGORY_DEFAULTS[id] || id; });
-    return out;
-  }
-}
-
-function persistTodoCategoryNames() {
-  try {
-    localStorage.setItem(TODO_CATEGORY_KEY, JSON.stringify(todoCategoryNames));
-    localStorage.setItem(TODO_CATEGORY_LIST_KEY, JSON.stringify(PRIORITIES));
-  } catch (error) {
-    // LocalStorage 不可用时仍保留当前会话中的分类名。
-  }
-}
+function loadTodoCategoryNames() { return {...todoCategorySnapshot.names}; }
+function persistTodoCategoryNames() { return commitTodoCategoryState(PRIORITIES,todoCategoryNames,data); }
+if (!workspaceHydrating) persistTodoCategoryMigration();
 
 function applyTodoCategoryNames() {
   if (typeof renderTodoRail === 'function') renderTodoRail();
   if (typeof applyQuickCategoryNames === 'function') applyQuickCategoryNames();
 }
-if (window.slateAPI && typeof window.slateAPI.scheduleTodoReminders === 'function') {
-  window.slateAPI
-    .scheduleTodoReminders(PRIORITIES.flatMap((priority) => data[priority] || []))
-    .catch(() => {});
-}
+syncTodoReminders();
 
 if (window.slateAPI && typeof window.slateAPI.onTodoReminder === 'function') {
   window.slateAPI.onTodoReminder((payload) => {
@@ -351,19 +322,19 @@ function todoItemHtml(bucket, item) {
   const categoryName = todoCategoryNames[bucket] || bucket;
   const categoryChip = todoView === 'done'
     ? ''
-    : `<button class="todo-cat-chip" type="button" data-action="cycle-cat" data-bucket="${bucket}" title="点击切换分类">${escapeHtml(categoryName)}</button>`;
+    : `<button class="todo-cat-chip" type="button" data-action="choose-category" data-bucket="${bucket}" aria-haspopup="dialog" title="选择任务分类">${escapeHtml(categoryName)}</button>`;
   const focused = window.SlateWorkflow.isFocus(item);
-  const pinLabel = focused ? '取消今日重点' : '设为今日重点';
+  const pinLabel = focused ? '取消今日优先，任务仍保留' : '置顶到首页今天，今天优先做；不改变日期和截止时间';
   const pinButton = item.done
     ? ''
-    : `<button class="todo-pin${focused ? ' pinned' : ''}" type="button" data-action="pin" aria-label="${pinLabel}：${safeText}" title="${pinLabel}" aria-pressed="${focused}"><span>${focused ? '今日重点' : '设为重点'}</span></button>`;
+    : `<button class="todo-pin${focused ? ' pinned' : ''}" type="button" data-action="pin" aria-label="${pinLabel}：${safeText}" title="${pinLabel}" aria-pressed="${focused}"><span>${focused ? '今日优先' : '优先做'}</span></button>`;
   const isEditing = editingTodo?.id === item.id;
   const contentHtml = isEditing
     ? `<div class="todo-inline-editor"><input class="todo-inline-name" value="${safeText}" maxlength="80" aria-label="修改待办名称" />${dueChip}<button class="todo-inline-deadline" type="button" data-action="edit-deadline">${deadline || '日期'}</button><button class="todo-inline-save" type="button" data-action="save-edit" aria-label="保存修改">✓</button></div>`
     : `<button class="todo-copy" type="button" data-action="edit" title="${safeText}" aria-label="修改：${safeText}"><span class="todo-text">${safeText}</span>${dueChip}${deadline ? `<time class="todo-ddl" datetime="${escapeHtml(item.deadline)}">${escapeHtml(deadline)}</time>` : ''}</button>`;
   const statusNames = {active:'待处理', waiting:'等待反馈', followup:'持续跟进'};
   const followupLabel = item.followupAt ? new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(item.followupAt)) : '';
-  const summary = [item.status !== 'active' ? statusNames[item.status] : '', item.estimateMinutes ? `${item.estimateMinutes} 分钟` : '', followupLabel ? `再次提醒 ${followupLabel}` : ''].filter(Boolean).join(' · ');
+  const summary = [item.recurrenceId ? '重复事项' : '', item.attachments?.length ? `${item.attachments.length} 张图片` : '', item.status !== 'active' ? statusNames[item.status] : '', item.estimateMinutes ? `${item.estimateMinutes} 分钟` : '', followupLabel ? `再次提醒 ${followupLabel}` : ''].filter(Boolean).join(' · ');
   return `
     <li class="todo-item${doneClass}${selectedClass}${expandedTodoId === item.id ? ' details-open' : ''}" data-id="${safeId}" data-priority="${bucket}">
       <div class="todo-item-main">
@@ -383,11 +354,10 @@ function todoItemHtml(bucket, item) {
 function todoWorkflowDetails(item) {
   const localTime = item.followupAt ? new Date(new Date(item.followupAt).getTime() - new Date(item.followupAt).getTimezoneOffset()*60000).toISOString().slice(0,16) : '';
   return `<div class="todo-work-details">
-    <div class="todo-work-fields"><label>打算什么时候做<select data-detail="plan">${[['day','指定一天'],['week','本周'],['later','以后再做']].map(([value,label])=>`<option value="${value}"${item.planKind===value?' selected':''}>${label}</option>`).join('')}</select><input type="date" data-detail="plan-date" aria-label="计划执行日期" value="${item.planDate || window.SlateWorkflow.dateKey()}"${item.planKind==='day'?'':' hidden'} /></label><label>处理状态<select data-detail="status">${[['active','待处理'],['waiting','等待反馈'],['followup','持续跟进']].map(([value,label])=>`<option value="${value}"${item.status===value?' selected':''}>${label}</option>`).join('')}</select></label>
-    <label>预计用时<select data-detail="estimate">${[0,30,45,60].map(value=>`<option value="${value}"${item.estimateMinutes===value?' selected':''}>${value?value+' 分钟':'不设置'}</option>`).join('')}</select></label>
-    <label>再次提醒<input type="datetime-local" data-detail="followup" value="${localTime}" /></label></div>
-    <label class="todo-work-note-label">下一步 / 等谁反馈 / 小步骤<textarea data-detail="notes" maxlength="6000" rows="3" placeholder="例如：等客户确认预算，周三再催；或写下 30–60 分钟的小步骤">${escapeHtml(item.notes || '')}</textarea></label>
-    <div class="todo-work-detail-actions"><span>再次提醒与任务截止时间分别保存</span><button type="button" data-action="save-details">保存详情</button></div>
+    <div class="todo-work-fields todo-plan-fields"><label>安排<select data-detail="plan">${[['day','指定一天'],['week','本周'],['later','以后再做']].map(([value,label])=>`<option value="${value}"${item.planKind===value?' selected':''}>${label}</option>`).join('')}</select></label><label${item.planKind==='day'?'':' hidden'} class="todo-plan-date-label">日期<input type="date" data-detail="plan-date" aria-label="计划执行日期" value="${item.planDate || window.SlateWorkflow.dateKey()}"${item.planKind==='day'?'':' hidden'} /></label></div>
+    <label class="todo-work-note-label">补充说明<textarea data-detail="notes" maxlength="6000" rows="3" placeholder="需要记住的细节，直接写在这里…">${escapeHtml(item.notes || '')}</textarea></label>
+    <details class="todo-extra-options"><summary>更多选项</summary><div class="todo-extra-fields"><div class="todo-work-fields"><label>处理状态<select data-detail="status">${[['active','待处理'],['waiting','等待反馈'],['followup','持续跟进']].map(([value,label])=>`<option value="${value}"${item.status===value?' selected':''}>${label}</option>`).join('')}</select></label><label>预计用时<select data-detail="estimate">${[0,30,45,60].map(value=>`<option value="${value}"${item.estimateMinutes===value?' selected':''}>${value?value+' 分钟':'不设置'}</option>`).join('')}</select></label><label>再次提醒<input type="datetime-local" data-detail="followup" value="${localTime}" /></label></div><label class="todo-support-label">卡点／需要帮助（可选）<textarea data-detail="support" maxlength="2000" rows="2" placeholder="缺少什么条件、等待谁协助？报告只引用你记录的内容。">${escapeHtml(item.support||'')}</textarea></label></div></details>
+    <div class="todo-work-detail-actions"><span>有截止时间时，到点会自动提醒</span><button type="button" data-action="save-details">保存</button></div>
   </div>`;
 }
 
@@ -483,7 +453,9 @@ function renderList(priority, options = {}) {
     selectionStart: field.selectionStart,
     selectionEnd: field.selectionEnd,
     scrollTop: field.scrollTop,
+    focused: field === document.activeElement,
   })) : [];
+  const openOptions=options.preserveDrafts?[...list.querySelectorAll('.todo-extra-options[open]')].map(el=>el.closest('[data-id]').dataset.id):[];
   const items = visibleTodos();
   if (expandedTodoId && !items.some(item=>item.id === expandedTodoId)) expandedTodoId = '';
   // 单条渲染异常不允许拖垮整个视图（否则切换视角时界面会卡在旧状态）
@@ -494,12 +466,18 @@ function renderList(priority, options = {}) {
       return `<li class="todo-item" data-id="${escapeHtml(item.id)}" data-priority="${escapeHtml(item.bucket)}"><button class="checkbox" type="button" data-action="toggle" aria-label="标记完成">${checkSvg()}</button><button class="todo-copy" type="button" data-action="edit"><span class="todo-text">${escapeHtml(item.text)}</span></button></li>`;
     }
   }).join('');
+  for(const id of openOptions){const details=list.querySelector(`[data-id="${CSS.escape(id)}"] .todo-extra-options`);if(details)details.open=true;}
   for (const draft of drafts) {
     const row = list.querySelector(`[data-id="${CSS.escape(draft.id)}"]`);
     const field = row?.querySelector(draft.key === 'inline-name' ? '.todo-inline-name' : `[data-detail="${CSS.escape(draft.key)}"]`);
     if (!field) continue;
     field.value = draft.value;
     field.hidden = draft.hidden;
+    if (draft.key === 'plan-date') {
+      const label=field.closest('.todo-plan-date-label');
+      if(label)label.hidden=field.hidden;
+    }
+    if(draft.focused && !field.hidden) field.focus({preventScroll:true});
     field.scrollTop = draft.scrollTop;
     if (typeof draft.selectionStart === 'number') field.setSelectionRange(draft.selectionStart, draft.selectionEnd);
   }
@@ -586,6 +564,7 @@ function flashCheckboxPop(priority, id) {
 }
 
 function addTodo(bucket, text, deadline, pinnedToday = false, options = {}) {
+  bucket=PRIORITIES.includes(bucket)?bucket:'P3';
   let item = window.SlateDomain.createTodo(text, deadline, generateId(), Date.now());
   if (!item) return false;
   item = window.SlateWorkflow.normalizeTodo(item);
@@ -593,6 +572,7 @@ function addTodo(bucket, text, deadline, pinnedToday = false, options = {}) {
   item=window.SlateWorkflow.setPlan(item,kind,new Date(),deadline ? window.SlateWorkflow.dateKey(new Date(deadline)) : '');
   if (pinnedToday) item = window.SlateWorkflow.setFocus(item,true,new Date(),nextFocusOrder());
   if (typeof options.notes === 'string') item.notes = options.notes;
+  if (Array.isArray(options.attachments)) item.attachments=options.attachments.slice(0,8);
   const previousPositions = captureTodoPositions();
   data[bucket].push(item);
   if (!saveData(data)) {
@@ -624,20 +604,38 @@ function editTodo(id, text, deadline) {
   return true;
 }
 
+function setTodoPriority(id,on) {
+  const found=findTodo(id);if(!found||found.item.done)return false;
+  const previous=data,focused=[id,...window.SlateWorkflow.focusTasks(allTodos()).filter(item=>item.id!==id).map(item=>item.id)];
+  const orders=new Map(focused.map((key,index)=>[key,index]));
+  const updated=window.SlateWorkflow.setFocus(found.item,on,new Date(),0),next={};
+  for(const [bucket,items] of Object.entries(data))next[bucket]=items.map(item=>{
+    if(item.id===id)return updated;
+    return on&&orders.has(item.id)?{...item,focusOrder:orders.get(item.id)}:item;
+  });
+  data=next;
+  if(!saveData(data)){data=previous;showStatusToast('今日优先未保存，任务保持不变，请重试',true);return false;}
+  renderList(undefined,{preserveDrafts:true});
+  showStatusToast(on?'已置顶到首页「今天」，日期和截止时间保持不变':'已取消今日优先，任务仍保留');
+  return true;
+}
+
 function toggleTodo(id) {
   const found = findTodo(id);
-  if (!found) return;
+  if (!found) return false;
+  const previous = found.item;
   const previousPositions = captureTodoPositions();
   const restoreFocus = document.activeElement?.closest('.todo-item')?.dataset.id === id;
   data[found.bucket][found.index] = window.SlateWorkflow.completeTodo(found.item,!found.item.done);
   const nowDone = data[found.bucket][found.index].done;
-  saveData(data);
-  renderList({
+  if (!saveData(data)) { data[found.bucket][found.index]=previous;showStatusToast('任务未保存，请重试');return false; }
+  renderList(undefined,{
     previousPositions,
     focusId: restoreFocus ? id : '',
     focusAction: 'toggle',
   });
   if (nowDone) requestAnimationFrame(() => flashCheckboxPop(found.bucket, id)); // 勾选弹一下
+  return true;
 }
 
 function deleteTodo(id) {
@@ -707,6 +705,7 @@ function nextAnimationFrame() {
 }
 
 function waitForPanelMotion() {
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches)return Promise.resolve();
   return new Promise((resolve) => {
     let settled = false;
     const finish = () => {
@@ -719,8 +718,8 @@ function waitForPanelMotion() {
     const onEnd = (event) => {
       if (
         event.target === panel &&
-        event.propertyName === 'opacity' &&
-        event.pseudoElement === '::before'
+        event.propertyName === 'transform' &&
+        !event.pseudoElement
       ) {
         finish();
       }
@@ -767,8 +766,9 @@ function syncPanelAccessibility(expanded) {
     const activeTabButton = document.querySelector(`.tab[data-tab="${activeTab}"]`);
     if (activeTabButton) activeTabButton.focus({ preventScroll: true });
   }
-  slate.setAttribute('aria-hidden', String(expanded));
-  slate.tabIndex = expanded ? -1 : 0;
+  slate.setAttribute('aria-hidden', 'false');
+  slate.setAttribute('title', expanded ? '按住上推收起，或点击收起' : '按住下拉展开，或点击展开');
+  slate.tabIndex = 0;
 }
 
 // 原生窗口只提供动画需要的透明画布；用户看到的黑色岛体由 CSS 连续形变。
@@ -811,6 +811,7 @@ async function setMode(expanded) {
         if (!isExpanded) return;
         if (activeTab === 'clip') renderClipList();
       }, HEAVY_LOAD_AFTER_OPEN_MS);
+      await waitForPanelMotion();
     } else {
       if (panelPinned) setPanelPinned(false);
       const motion = waitForPanelMotion();
@@ -842,11 +843,54 @@ async function setMode(expanded) {
   }
 }
 
+// The pointer controller owns only the preview. Reuse this state/accessibility
+// adapter to adopt its settled result without replaying the ordinary animation.
+window.SlatePanelMotion = {
+  async preparePull() {
+    if (modeBusy) return false;
+    window.SlateSnippets?.close();
+    modeBusy = true;
+    if (isExpanded) { panel.inert = true; panel.setAttribute('aria-hidden', 'true'); return true; }
+    _justExpanded = true;
+    try {
+      const openingTab = window.SlateDomain.resolveDefaultPanelTab(defaultOpenTab, TABS);
+      if (activeTab !== openingTab) await setActiveTab(openingTab);
+      else applyTabDom(openingTab);
+      syncPanelAccessibility(false);
+      return true;
+    } catch (_) {
+      modeBusy = false;
+      _justExpanded = false;
+      return false;
+    }
+  },
+  finishPull(expanded) {
+    isExpanded = expanded;
+    if (!expanded && panelPinned) setPanelPinned(false);
+    app.classList.toggle('expanded', expanded);
+    app.classList.toggle('collapsed', !expanded);
+    app.classList.remove('opening', 'closing');
+    syncPanelAccessibility(expanded);
+    _justExpanded = false;
+    if (expanded) {
+      requestAnimationFrame(positionIndicator);
+      if (activeTab === 'clip') setTimeout(() => { if (isExpanded) renderClipList(); }, HEAVY_LOAD_AFTER_OPEN_MS);
+    }
+    document.dispatchEvent(new CustomEvent('slate:modechange', { detail: { expanded } }));
+    modeBusy = false;
+    if (pendingMode !== null) {
+      const next = pendingMode;
+      pendingMode = null;
+      if (next !== isExpanded) setMode(next);
+    }
+  },
+};
+
 slate.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   e.preventDefault();
   if (e.repeat) return;
-  setMode(true);
+  setMode(!isExpanded);
 });
 
 slate.addEventListener('click', () => {
@@ -855,6 +899,9 @@ slate.addEventListener('click', () => {
 
 document.addEventListener('keydown', (event) => {
   const target = event.target instanceof Element ? event.target : null;
+  if(window.SlatePull?.isDragging())return;
+  if(document.body.classList.contains('api-settings-open'))return;
+  if(target?.closest('dialog[open]'))return;
   const editable = Boolean(target && target.closest(
     'input, textarea, select, [contenteditable]:not([contenteditable="false"]), audio, video'
   ));
@@ -884,6 +931,11 @@ panel.addEventListener('click', (e) => {
 // Escape 不会原生到达页面（被浏览器层吞掉），由主进程 before-input-event 转发
 if (window.slateAPI && typeof window.slateAPI.onEscape === 'function') {
   window.slateAPI.onEscape(() => {
+    if(window.SlatePull?.isDragging()){window.SlatePull.cancel();return;}
+    if(document.body.classList.contains('api-settings-open')){window.SlateApiSettings?.close();return;}
+    if(window.SlateSnippets?.isOpen()){window.SlateSnippets.close();return;}
+    const modal=document.querySelector('dialog[open]');
+    if(modal){const cancel=new Event('cancel',{cancelable:true});if(modal.dispatchEvent(cancel))modal.close();return;}
     if (globalSearch && !globalSearch.hidden) {
       closeGlobalSearch();
       return;
@@ -911,7 +963,7 @@ if (window.slateAPI && typeof window.slateAPI.onToggleShortcut === 'function') {
 // 失焦与点击收起共用同一个状态机，保证退场节奏一致。
 if (window.slateAPI && typeof window.slateAPI.onCollapseRequest === 'function') {
   window.slateAPI.onCollapseRequest(() => {
-    if (isExpanded) setMode(false);
+    if (isExpanded || modeBusy) setMode(false);
   });
 }
 
@@ -1073,8 +1125,9 @@ async function setActiveTab(name) {
     // renderClipList 延后只是缩略图晚一点出现，可接受。
     const _tabNameForDeferred = name; // 闭包捕获当前目标 Tab
     const runHeavyLoads = () => {
+      if(activeTab!==_tabNameForDeferred)return;
       if (_tabNameForDeferred === 'clip') renderClipList();
-      if (_tabNameForDeferred === 'notes') renderNotesLibrary();
+      if (_tabNameForDeferred === 'notes') renderNotesLibrary({preserveEditor:Boolean(notesDetail?.querySelector('#notes-editor[data-note-id]'))});
     };
     if (_justExpanded) {
       // 双帧后再延迟重活，让岛体形变先完成，避免抢首帧 CPU/GPU。
@@ -1301,7 +1354,7 @@ function globalSearchIndex() {
   }
   const commands = parseSearchStorage('slate-home-commands', []);
   if (Array.isArray(commands)) commands.forEach((command) => {
-    if (command?.text) rows.push({ kind: '常用指令', tab: 'settings', id: command.id || '', label: command.text, detail: '设置中的常用指令', text: command.text });
+    if (command?.text) rows.push({ kind: '常用片段', tab: 'home', id: command.id || '', label: command.text, detail: '点击复制常用文字', text: command.text });
   });
   if (features.recordings !== false) {
     const recordings = parseSearchStorage('slate-recordings', []);
@@ -1392,6 +1445,11 @@ async function activateGlobalSearchResult(button) {
     await copyClipEntry(resultId);
     return;
   }
+  if (resultKind === '常用片段') {
+    window.SlateSnippets?.open();
+    document.querySelector(`.command-item[data-id="${CSS.escape(resultId)}"] [data-action="copy-command"]`)?.click();
+    return;
+  }
   if (resultKind === '待办') {
     const found = findTodo(resultId);
     if (found) {
@@ -1418,7 +1476,6 @@ async function activateGlobalSearchResult(button) {
       '笔记': `[data-note-id="${CSS.escape(resultId)}"]`,
       '链接': `[data-link-id="${CSS.escape(resultId)}"] .link-open`,
       '剪贴板': `.clip-item[data-id="${CSS.escape(resultId)}"] .clip-copy-target`,
-      '常用指令': `.command-item[data-id="${CSS.escape(resultId)}"] .command-text`,
       '录音': `.recording-item[data-id="${CSS.escape(resultId)}"] .recording-item-main`,
       '应用': `.launcher-item[data-launcher-index="${CSS.escape(resultId)}"]`,
     };
@@ -1474,194 +1531,94 @@ function initTab() {
   setActiveTab('home');
 }
 
-// ============ 分类栏（动态增删改名）============
-function persistTodoCategoryList() {
-  persistTodoCategoryNames();
-}
-
-function renderTodoRail() {
-  const host = document.getElementById('todo-rail-cats');
-  if (!host) return;
-  host.replaceChildren();
-  PRIORITIES.forEach((id) => {
-    const row = document.createElement('div');
-    row.className = 'todo-tag-row';
-    row.dataset.cat = id;
-
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'todo-tag' + (todoTag === id ? ' is-active' : '');
-    button.dataset.tag = id;
-    button.title = '单击筛选 · 双击重命名';
-    const dot = document.createElement('i');
-    dot.className = 'dot';
-    dot.style.background = CATEGORY_COLORS[PRIORITIES.indexOf(id) % CATEGORY_COLORS.length];
-    dot.setAttribute('aria-hidden', 'true');
-    const name = document.createElement('span');
-    name.className = 'todo-tag-name';
-    name.textContent = todoCategoryNames[id] || id;
-    button.append(dot, name);
-
-    const count = document.createElement('span');
-    count.className = 'count';
-    count.dataset.priority = id;
-
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'todo-tag-delete';
-    remove.textContent = '×';
-    remove.setAttribute('aria-label', `删除分类：${todoCategoryNames[id] || id}`);
-    remove.title = '删除分类（需先清空其中的待办）';
-
-    row.append(button, count, remove);
-    host.append(row);
-  });
-
-  const addRow = document.createElement('button');
-  addRow.type = 'button';
-  addRow.className = 'todo-tag todo-tag-add';
-  addRow.id = 'todo-tag-add';
-  addRow.textContent = '＋ 新建分类';
-  host.append(addRow);
-}
-
-function persistCategoryState() {
-  persistTodoCategoryNames();
-  applyTodoCategoryNames();
-  renderList();
-}
-
-function startTagRename(row) {
-  const id = row.dataset.cat;
-  const button = row.querySelector('.todo-tag');
-  const nameSpan = button.querySelector('.todo-tag-name');
-  if (!nameSpan || button.querySelector('.todo-tag-rename')) return;
-  nameSpan.hidden = true;
-  const input = document.createElement('input');
-  input.className = 'todo-tag-rename';
-  input.value = todoCategoryNames[id] || '';
-  input.maxLength = 24;
-  input.setAttribute('aria-label', '重命名分类');
-  button.append(input);
-  input.focus();
-  input.select();
-  let renameDone = false;
-  const finish = (save) => {
-    if (renameDone) return;
-    renameDone = true;
-    const value = input.value.trim();
-    if (save && value) {
-      todoCategoryNames[id] = value.slice(0, 24);
-      persistTodoCategoryNames();
-    }
-    input.remove();
-    nameSpan.hidden = false;
-    applyTodoCategoryNames();
-  };
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.isComposing) {
-      event.preventDefault();
-      finish(true);
-    } else if (event.key === 'Escape') {
-      finish(false);
-    }
-  });
-  input.addEventListener('blur', () => finish(true));
-}
-
-function addTodoCategory(name) {
-  const clean = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 24);
-  if (!clean) return false;
-  if (PRIORITIES.some((id) => todoCategoryNames[id] === clean)) {
-    showStatusToast('已有同名分类');
-    return false;
+// ============ 分类：系统未分组、显式选择与可管理顺序 ============
+function commitTodoCategoryState(ids,names,nextData,extra={}) {
+  if (workspaceHydrating || workspaceReloadPending || todoCategorySnapshot.readOnly) {
+    showStatusToast('分类数据尚未就绪或无法读取，原内容保持不变',true); return false;
   }
-  const id = 'c' + Date.now().toString(36);
-  PRIORITIES.push(id);
-  todoCategoryNames[id] = clean;
-  data[id] = data[id] || [];
-  persistCategoryState();
-  showStatusToast(`已创建分类「${clean}」`);
+  const nextIds=[...ids],nextNames={...names,P3:'未分组'};
+  const saved=window.SlateCategoryLogic.transaction(localStorage,{
+    [STORAGE_KEY]:nextData,[TODO_CATEGORY_KEY]:nextNames,[TODO_CATEGORY_LIST_KEY]:nextIds,...extra
+  });
+  if(!saved.ok){showStatusToast('分类未保存，原分类和任务保持不变，请重试',true);return false;}
+  PRIORITIES=nextIds;todoCategoryNames=nextNames;data=nextData;
+  todoCategorySnapshot={...todoCategorySnapshot,ids:nextIds,names:nextNames,data:nextData,hasSource:true};
+  if(todoTag!=='all'&&!PRIORITIES.includes(todoTag))todoTag='all';
+  syncTodoReminders(data);applyTodoCategoryNames();renderList(undefined,{preserveDrafts:true});
+  document.dispatchEvent(new CustomEvent('slate:tasks-changed'));
+  document.dispatchEvent(new CustomEvent('slate:categories-changed'));
   return true;
 }
-
+function renderTodoRail() {
+  const host=document.getElementById('todo-rail-cats');if(!host)return;
+  const all=document.querySelector('.todo-rail .todo-tag[data-tag="all"]');
+  if(all){all.querySelector('span').textContent='全部分类';all.title='查看所有分类的任务，固定置顶';}
+  const heading=document.querySelector('.todo-rail-heading');if(heading)heading.textContent='分类';
+  host.replaceChildren();
+  PRIORITIES.forEach(id=>{
+    const row=document.createElement('div');row.className='todo-tag-row';row.dataset.cat=id;
+    const button=document.createElement('button');button.type='button';button.className='todo-tag'+(todoTag===id?' is-active':'');button.dataset.tag=id;
+    button.title=id==='P3'?'查看尚未分组的任务':'单击筛选；在管理分类中修改名称和顺序';
+    const dot=document.createElement('i');dot.className='dot';dot.style.background='var(--text-3)';dot.setAttribute('aria-hidden','true');
+    const name=document.createElement('span');name.className='todo-tag-name';name.textContent=todoCategoryNames[id]||id;button.append(dot,name);
+    const count=document.createElement('span');count.className='count';count.dataset.priority=id;row.append(button,count);host.append(row);
+  });
+  const add=document.createElement('button');add.type='button';add.className='todo-tag todo-tag-add';add.id='todo-tag-add';add.textContent='新建分类';
+  const manage=document.createElement('button');manage.type='button';manage.className='todo-tag todo-category-manage';manage.id='todo-category-manage';manage.textContent='管理分类';
+  host.append(add,manage);
+}
+function validNewCategoryName(name,except='') {
+  const clean=window.SlateCategoryLogic.cleanName(name);
+  return clean&&!['全部分类','未分组'].includes(clean)&&!PRIORITIES.some(id=>id!==except&&todoCategoryNames[id]===clean)?clean:'';
+}
+function addTodoCategory(name) {
+  const clean=validNewCategoryName(name);if(!clean){showStatusToast('分类名称不能为空、重复或使用系统分类名称');return false;}
+  const id='c'+generateId(),nextData={...data,[id]:[]};
+  if(!commitTodoCategoryState([...PRIORITIES,id],{...todoCategoryNames,[id]:clean},nextData))return false;
+  showStatusToast('已创建分类「'+clean+'」');return true;
+}
+function renameTodoCategory(id,name) {
+  if(id==='P3'||!PRIORITIES.includes(id))return false;
+  const clean=validNewCategoryName(name,id);if(!clean)return false;
+  return commitTodoCategoryState(PRIORITIES,{...todoCategoryNames,[id]:clean},data);
+}
 function deleteTodoCategory(id) {
-  if (PRIORITIES.length <= 1) {
-    showStatusToast('至少保留一个分类', true);
-    return;
-  }
-  const items = data[id] || [];
-  if (items.length) {
-    showStatusToast(`「${todoCategoryNames[id] || id}」里还有 ${items.length} 件待办，清空后再删除`, true);
-    return;
-  }
-  const index = PRIORITIES.indexOf(id);
-  PRIORITIES.splice(index, 1);
-  delete todoCategoryNames[id];
-  delete data[id];
-  if (todoTag === id) todoTag = 'all';
-  if (todoSelection.size) {
-    todoSelection.clear();
-    todoSelectionAnchor = null;
-  }
-  persistCategoryState();
-  showStatusToast('已删除分类');
+  if(id==='P3'||!PRIORITIES.includes(id))return false;
+  const nextData={...data,P3:[...(data.P3||[]),...(data[id]||[])]};delete nextData[id];
+  const names={...todoCategoryNames};delete names[id];const extra={};
+  try{
+    const key=window.SlateCategoryLogic.KEYS.rules,raw=localStorage.getItem(key);
+    if(raw!==null){const rules=JSON.parse(raw);if(!Array.isArray(rules))throw Error('invalid rules');extra[key]=rules.map(rule=>rule?.bucket===id?{...rule,bucket:'P3'}:rule);}
+  }catch{showStatusToast('重复规则无法读取，分类和任务保持不变，请先备份恢复',true);return false;}
+  if(!commitTodoCategoryState(PRIORITIES.filter(key=>key!==id),names,nextData,extra))return false;
+  showStatusToast('分类已删除，其中的任务已移到未分组');return true;
 }
-
-const todoRailCats = document.getElementById('todo-rail-cats');
-todoRailCats?.addEventListener('click', (event) => {
-  const remove = event.target.closest('.todo-tag-delete');
-  if (remove) {
-    deleteTodoCategory(remove.closest('.todo-tag-row')?.dataset.cat);
-    return;
-  }
-  const add = event.target.closest('#todo-tag-add');
-  if (add) {
-    // 原地变输入行：复用重命名输入框的交互
-    add.hidden = true;
-    const input = document.createElement('input');
-    input.className = 'todo-tag-rename';
-    input.placeholder = '分类名，回车保存';
-    input.maxLength = 24;
-    host_insertBefore(input, add);
-    input.focus();
-    let addDone = false;
-    const finish = (save) => {
-      if (addDone) return;
-      addDone = true;
-      if (save && input.value.trim()) addTodoCategory(input.value);
-      input.remove();
-      add.hidden = false;
-    };
-    input.addEventListener('keydown', (e2) => {
-      if (e2.key === 'Enter' && !e2.isComposing) {
-        e2.preventDefault();
-        finish(true);
-      } else if (e2.key === 'Escape') {
-        finish(false);
-      }
-    });
-    input.addEventListener('blur', () => finish(true));
-    return;
-  }
-  const tag = event.target.closest('.todo-tag');
-  if (!tag || tag.querySelector('.todo-tag-rename')) return;
-  todoTag = tag.dataset.tag;
-  document.querySelectorAll('.todo-tag').forEach((el) => el.classList.toggle('is-active', el === tag));
-  todoSelection.clear();
-  todoSelectionAnchor = null;
-  renderList();
-});
-function host_insertBefore(node, anchor) {
-  anchor.parentElement.insertBefore(node, anchor);
+function reorderTodoCategory(id,direction) {
+  const from=PRIORITIES.indexOf(id),to=from+direction;if(from<0||to<0||to>=PRIORITIES.length)return false;
+  const ids=[...PRIORITIES];[ids[from],ids[to]]=[ids[to],ids[from]];
+  return commitTodoCategoryState(ids,todoCategoryNames,data);
 }
-todoRailCats?.addEventListener('dblclick', (event) => {
-  const tag = event.target.closest('.todo-tag');
-  if (!tag || tag.dataset.tag === 'all') return;
-  const row = tag.closest('.todo-tag-row');
-  if (row) startTagRename(row);
+function moveTodoCategory(taskId,bucket) {
+  const found=findTodo(taskId);if(!found||!PRIORITIES.includes(bucket))return false;if(found.bucket===bucket)return true;
+  const nextData={...data,[found.bucket]:data[found.bucket].filter(item=>item.id!==taskId),[bucket]:[...(data[bucket]||[]),found.item]};
+  if(!commitTodoCategoryState(PRIORITIES,todoCategoryNames,nextData))return false;
+  showStatusToast('已移到「'+todoCategoryNames[bucket]+'」');return true;
+}
+window.SlateCategories=Object.freeze({
+  getAll:()=>PRIORITIES.map(id=>({id,name:todoCategoryNames[id]||id,system:id==='P3'})),
+  add:addTodoCategory,rename:renameTodoCategory,remove:deleteTodoCategory,reorder:reorderTodoCategory,moveTask:moveTodoCategory,
 });
-
+const todoRailCats=document.getElementById('todo-rail-cats');
+todoRailCats?.addEventListener('click',event=>{
+  const button=event.target.closest('button');if(!button)return;
+  if(button.id==='todo-tag-add'||button.id==='todo-category-manage'){window.SlateCategoryPicker.manage({anchor:button});return;}
+  const tag=button.closest('.todo-tag[data-tag]');if(!tag)return;
+  todoTag=tag.dataset.tag;document.querySelectorAll('.todo-tag[data-tag]').forEach(el=>el.classList.toggle('is-active',el.dataset.tag===todoTag));
+  todoSelection.clear();todoSelectionAnchor=null;renderList();
+});
+todoRailCats?.addEventListener('dblclick',event=>{
+  const row=event.target.closest('.todo-tag-row');if(row&&row.dataset.cat!=='P3')window.SlateCategoryPicker.manage({anchor:event.target,editId:row.dataset.cat});
+});
 applyTodoCategoryNames();
 
 const todoEditorBackdrop = document.getElementById('todo-date-popover');
@@ -1731,8 +1688,7 @@ function applyTodoEditorSelection(markManual = true) {
     if(!markManual)return true;
     const date=window.SlateWorkflow.dateKey(new Date(todoEditorYear,todoEditorMonthIndex,todoEditorDay));
     const found=findTodo(todoEditorContext.id);if(!found || !date)return false;
-    data[found.bucket][found.index]=window.SlateWorkflow.setPlan(found.item,'day',new Date(),date);
-    saveData(data);return true;
+    return window.SlateTasks.updateTask(found.item.id,{planKind:'day',planDate:date});
   }
   const deadline = selectedTodoDeadline();
   if (!deadline || Date.parse(deadline) <= Date.now()) {
@@ -1745,9 +1701,7 @@ function applyTodoEditorSelection(markManual = true) {
     const found = findTodo(id);
     if (!found) return false;
     if (!markManual) return true;
-    if (found.item.deadline !== deadline) found.item.remindedAt = 0;
-    found.item.deadline = deadline;
-    saveData(data);
+    if(!window.SlateTasks.updateTask(id,{deadline}))return false;
   } else {
     const trigger = document.getElementById('todo-quick-deadline');
     if (!trigger) return false;
@@ -1868,7 +1822,7 @@ function applyQuickCategoryNames() {
   PRIORITIES.forEach((bucket) => {
     select.add(new Option(todoCategoryNames[bucket] || bucket, bucket));
   });
-  if (PRIORITIES.includes(previous)) select.value = previous;
+  select.value = PRIORITIES.includes(previous) ? previous : 'P3';
 }
 
 if (quickInput) {
@@ -1949,7 +1903,11 @@ if (unifiedList) {
   unifiedList.addEventListener('change',event=> {
     if(event.target.matches('[data-detail="plan"]')) {
       const date=event.target.closest('.todo-work-fields')?.querySelector('[data-detail="plan-date"]');
-      if(date)date.hidden=event.target.value!=='day';
+      if(date) {
+        date.hidden=event.target.value!=='day';
+        const label=date.closest('.todo-plan-date-label');
+        if(label)label.hidden=date.hidden;
+      }
     }
   });
   unifiedList.addEventListener('click', (e) => {
@@ -1977,11 +1935,7 @@ if (unifiedList) {
     if (action === 'toggle') {
       toggleTodo(id);
     } else if (action === 'pin') {
-      const found = findTodo(id);
-      if (!found) return;
-      data[found.bucket][found.index] = window.SlateWorkflow.setFocus(found.item,!window.SlateWorkflow.isFocus(found.item),new Date(),nextFocusOrder());
-      saveData(data);
-      renderList();
+      const found=findTodo(id);if(found)setTodoPriority(id,!window.SlateWorkflow.isFocus(found.item));
     } else if (action === 'details') {
       expandedTodoId = expandedTodoId === id ? '' : id;
       renderList();
@@ -1996,27 +1950,19 @@ if (unifiedList) {
       const planDate=item.querySelector('[data-detail="plan-date"]').value;
       if(planKind==='day' && !planDate) return showStatusToast('请选择打算执行的日期');
       const planChanged=planKind!==found.item.planKind || (planKind==='day' && planDate!==found.item.planDate);
-      if(planChanged) data[found.bucket][found.index]=window.SlateWorkflow.setPlan(found.item,planKind,new Date(),planDate);
-      const target = data[found.bucket][found.index];
-      Object.assign(target,{
+      const changes={
         status:item.querySelector('[data-detail="status"]').value,
         estimateMinutes:Number(item.querySelector('[data-detail="estimate"]').value),
         notes:item.querySelector('[data-detail="notes"]').value.trim(),
-        followupRemindedAt:followupAt === target.followupAt ? target.followupRemindedAt : 0,
+        support:item.querySelector('[data-detail="support"]')?.value.trim()||'',
         followupAt,
-      });
-      data[found.bucket][found.index] = window.SlateWorkflow.normalizeTodo(target);
+        ...(planChanged?{planKind,planDate}:{})
+      };
+      if(!window.SlateTasks.updateTask(id,changes))return;
       expandedTodoId = '';
-      saveData(data); renderList(); showStatusToast('任务详情已保存');
-    } else if (action === 'cycle-cat') {
-      const found = findTodo(id);
-      if (!found) return;
-      const next = PRIORITIES[(PRIORITIES.indexOf(found.bucket) + 1) % PRIORITIES.length];
-      data[found.bucket].splice(found.index, 1);
-      data[next].push(found.item);
-      saveData(data);
-      renderList();
-      showStatusToast(`已移动到「${todoCategoryNames[next] || next}」`);
+      renderList(); showStatusToast('任务详情已保存');
+    } else if (action === 'choose-category' || action === 'cycle-cat') {
+      window.SlateCategoryPicker.open(id,target);
     } else if (action === 'edit') {
       const found = findTodo(id);
       if (found) {
@@ -2599,6 +2545,8 @@ let homeNoteSaveTimer = null;
 let homeNoteDirty = false;
 let homeNotePendingArchiveId = '';
 let homeNoteStorageIdentity = null;
+let homeNoteImageContext = crypto.randomUUID();
+function notifyNoteImages(kind = '') { document.dispatchEvent(new CustomEvent('slate:notes-changed', {detail:{kind}})); }
 
 function readHomeNoteStorageIdentity() {
   return {
@@ -2638,13 +2586,15 @@ function saveHomeNote() {
       return false;
     }
     const content = noteInput.value;
-    if (!content.trim()) {
+    const activeImages = loadNoteArchive().find(note => note.id === identity.activeId)?.attachments || [];
+    if (!content.trim() && !activeImages.length) {
       // Clearing the capture box starts a new draft; it never erases its archive.
       localStorage.setItem(NOTE_KEY, content);
       homeNoteStorageIdentity = readHomeNoteStorageIdentity();
       localStorage.removeItem(NOTE_ACTIVE_ARCHIVE_KEY);
       homeNoteStorageIdentity = readHomeNoteStorageIdentity();
       homeNotePendingArchiveId = '';
+      homeNoteImageContext = crypto.randomUUID();
     } else {
       const archive = loadNoteArchive();
       const activeId = homeNotePendingArchiveId || identity.activeId || '';
@@ -2668,6 +2618,7 @@ function saveHomeNote() {
     }
     homeNoteDirty = false;
     setHomeNoteSaveState('已自动保存');
+    notifyNoteImages('home');
     return true;
   } catch (error) {
     setHomeNoteSaveState('未能保存，请重试', true);
@@ -2701,10 +2652,12 @@ function startNewHomeNote() {
     localStorage.removeItem(NOTE_ACTIVE_ARCHIVE_KEY);
     homeNoteStorageIdentity = readHomeNoteStorageIdentity();
     noteInput.value = '';
+    homeNoteImageContext = crypto.randomUUID();
     homeNotePendingArchiveId = '';
     homeNoteDirty = false;
     setHomeNoteSaveState('直接输入，自动保存');
     noteInput.focus({ preventScroll: true });
+    notifyNoteImages('home');
   } catch (error) {
     setHomeNoteSaveState('未能保存，请重试', true);
   }
@@ -2789,7 +2742,7 @@ function noteArchiveTitle(note) {
 
 function noteArchiveExcerpt(note) {
   const lines = String(note && note.content || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  return lines.join(' ').replace(/[#*_~`>\[\]]/g, '').slice(0, 86);
+  return lines.join(' ').replace(/[#*_~`>\[\]]/g, '').slice(0, 86) || (note?.attachments?.length ? `${note.attachments.length} 张图片` : '');
 }
 
 function noteArchiveTime(timestamp) {
@@ -2855,6 +2808,7 @@ function renderNotesDetail(notes = loadNoteArchive()) {
   editor.setAttribute('aria-label', `编辑笔记：${noteArchiveTitle(note)}`);
   editor.spellcheck = false;
   notesDetail.append(header, editor);
+  document.dispatchEvent(new CustomEvent('slate:note-selection', {detail:{kind:'library',id:note.id}}));
   if (note !== notesDraft) requestNoteTitle(note);
 }
 
@@ -2927,7 +2881,7 @@ function persistNotesEditor(editor) {
   if (notesDraft?.id === id && !archive.some((note) => note.id === id)) {
     notesDraft.content = editor.value;
     notesDraft.title = title;
-    if (!editor.value.trim() && !title.trim()) {
+    if (!editor.value.trim() && !title.trim() && !notesDraft.attachments?.length) {
       const time = notesDetail?.querySelector('.notes-detail-time');
       if (time) time.textContent = '直接写下内容，自动保存';
       return;
@@ -2993,6 +2947,7 @@ function renderNotesLibrary({ preserveEditor = false } = {}) {
     empty.textContent = archive.length ? '没有找到相关笔记' : '直接在右侧写，有内容后会自动出现在这里';
     notesList.append(empty);
     if (!preserveEditor) renderNotesDetail(notes);
+    notifyNoteImages('library');
     return;
   }
   notes.forEach((note) => {
@@ -3012,6 +2967,7 @@ function renderNotesLibrary({ preserveEditor = false } = {}) {
     notesList.append(button);
   });
   if (!preserveEditor) renderNotesDetail(notes);
+  notifyNoteImages('library');
 }
 
 noteSaveButton?.addEventListener('click', saveHomeNote);
@@ -3082,6 +3038,7 @@ notesDetail?.addEventListener('click', (event) => {
     localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(next));
     if (localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY) === note.id) {
       localStorage.removeItem(NOTE_ACTIVE_ARCHIVE_KEY);
+      homeNoteImageContext = crypto.randomUUID();
     }
     const deletedHomeContent = noteInput?.value || '';
     homeNoteStorageIdentity = readHomeNoteStorageIdentity();
@@ -3113,6 +3070,64 @@ notesDetail?.addEventListener('click', (event) => {
 });
 
 notesNewButton?.addEventListener('click', startNewNote);
+
+window.SlateNotesImages = Object.freeze({
+  getTarget(kind) {
+    if (workspaceHydrating || workspaceReloadPending) return null;
+    const archive = loadNoteArchive();
+    if (kind === 'home') {
+      const noteId = localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY) || '';
+      return {id:`home:${homeNoteImageContext}`,noteId,attachments:archive.find(note=>note.id===noteId)?.attachments || []};
+    }
+    if (kind !== 'library' || !selectedNoteId) return null;
+    const note = archive.find(note=>note.id===selectedNoteId) || (notesDraft?.id===selectedNoteId ? notesDraft : null);
+    return note ? {id:note.id,noteId:note.id,attachments:note.attachments || []} : null;
+  },
+  add(kind, additions, expectedId) { return changeNoteImages(kind, additions, null, expectedId); },
+  remove(kind, attachmentId, expectedId) { return changeNoteImages(kind, null, attachmentId, expectedId); },
+});
+
+function changeNoteImages(kind, additions, removeId, expectedId) {
+  try {
+    const target = window.SlateNotesImages.getTarget(kind);
+    if (!target || (expectedId && target.id !== expectedId)) throw Error('当前笔记已切换，请回到原笔记后重试');
+    if (kind === 'home' && !saveHomeNote()) throw Error('正文尚未保存，图片未添加，请先重试保存');
+    if (kind === 'library') flushNotesEditorSave();
+    const refreshed = window.SlateNotesImages.getTarget(kind);
+    if (!refreshed || refreshed.id !== target.id) throw Error('当前笔记已变更，请重试');
+    const original = JSON.parse(localStorage.getItem(NOTE_ARCHIVE_KEY) || '[]');
+    if (!Array.isArray(original)) throw Error('笔记数据无法读取，已停止覆盖');
+    const archive = window.SlateDomain.normalizeNoteArchive(original);
+    const noteId = kind === 'home' ? localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY) || generateId() : selectedNoteId;
+    const existing = archive.find(note=>note.id===noteId) || (kind==='library' && notesDraft?.id===noteId ? notesDraft : null);
+    const previous = existing?.attachments || [];
+    const incoming = additions ? window.SlateDomain.normalizeNoteAttachments(additions) : [];
+    if (additions && (!incoming.length || incoming.length !== additions.length)) throw Error('图片记录无效，原笔记未更改');
+    const nextImages = removeId ? previous.filter(item=>item.id!==removeId) : [...previous, ...incoming.filter(item=>!previous.some(old=>old.id===item.id))];
+    if (nextImages.length > 8) throw Error('每篇笔记最多添加 8 张图片');
+    const content = kind === 'home' ? noteInput.value : notesDetail.querySelector('#notes-editor')?.value ?? existing?.content ?? '';
+    const title = kind === 'library' ? notesDetail.querySelector('.notes-detail-title')?.value ?? existing?.title ?? '' : existing?.title || '';
+    const now = Date.now();
+    const note = {...existing,id:noteId,content,title:title || (!content.trim() && nextImages.length ? '图片笔记' : ''),titleSource:existing?.titleSource || 'user',createdAt:existing?.createdAt || now,updatedAt:now,attachments:nextImages};
+    const next = window.SlateDomain.normalizeNoteArchive([note,...archive.filter(item=>item.id!==noteId)]);
+    const before = {archive:localStorage.getItem(NOTE_ARCHIVE_KEY),active:localStorage.getItem(NOTE_ACTIVE_ARCHIVE_KEY),home:localStorage.getItem(NOTE_KEY)};
+    try {
+      localStorage.setItem(NOTE_ARCHIVE_KEY, JSON.stringify(next));
+      if (kind === 'home') { localStorage.setItem(NOTE_KEY,content); localStorage.setItem(NOTE_ACTIVE_ARCHIVE_KEY,noteId); }
+    } catch(error) {
+      for (const [key,value] of [[NOTE_ARCHIVE_KEY,before.archive],[NOTE_ACTIVE_ARCHIVE_KEY,before.active],[NOTE_KEY,before.home]]) {
+        try { value===null ? localStorage.removeItem(key) : localStorage.setItem(key,value); } catch (_) { /* Preserve the editable draft for retry. */ }
+      }
+      throw Error('图片未能保存，原正文和图片仍保留，请重试');
+    }
+    if (notesDraft?.id === noteId) notesDraft = null;
+    if (kind === 'home') { homeNoteStorageIdentity = readHomeNoteStorageIdentity(); homeNoteDirty = false; setHomeNoteSaveState('已自动保存'); }
+    updateSavedNotePresentation(note);
+    if (kind==='library' || document.getElementById('tab-notes')?.classList.contains('active')) renderNotesLibrary({preserveEditor:true});
+    notifyNoteImages(kind);
+    return {ok:true};
+  } catch(error) { return {ok:false,error:error.message || '图片未保存，请重试'}; }
+}
 
 document.addEventListener('slate:tabchange', (event) => {
   if (event.detail?.tab !== 'notes') flushNotesEditorSave();
@@ -3875,8 +3890,9 @@ function clipEntryHtml(entry, faved) {
     <span class="clip-thumb-wrap">${thumbHtml}</span>
     <span class="clip-meta"><span class="clip-time">${timeStr}</span></span>
   </button>
-  <button class="clip-fav-btn${favClass}" type="button" data-action="fav" aria-label="${favLabel}">${star}</button>
-  <button class="clip-del-btn" type="button" data-action="delete" aria-label="删除">×</button>
+  <button class="clip-capture-action" type="button" data-action="image-task">转待办</button>
+  <div class="clip-item-actions"><button class="clip-fav-btn${favClass}" type="button" data-action="fav" aria-label="${favLabel}">${star}</button>
+  <button class="clip-del-btn" type="button" data-action="delete" aria-label="删除">×</button></div>
 </div>`;
   }
 
@@ -3893,8 +3909,8 @@ function clipEntryHtml(entry, faved) {
     <span class="clip-meta"><span class="clip-time">${timeStr}</span></span>
   </button>
   <button class="clip-capture-action" type="button" data-action="capture" title="翻译、存笔记或转待办">处理</button>
-  <button class="clip-fav-btn${favClass}" type="button" data-action="fav" aria-label="${favLabel}">${star}</button>
-  <button class="clip-del-btn" type="button" data-action="delete" aria-label="删除">×</button>
+  <div class="clip-item-actions"><button class="clip-fav-btn${favClass}" type="button" data-action="fav" aria-label="${favLabel}">${star}</button>
+  <button class="clip-del-btn" type="button" data-action="delete" aria-label="删除">×</button></div>
 </div>`;
 }
 
@@ -3998,12 +4014,23 @@ clipSearchInput?.addEventListener('keydown', (event) => {
 
 // ---- 列表事件委托 ----
 if (clipListEl) {
-  clipListEl.addEventListener('click', (e) => {
+  clipListEl.addEventListener('click', async (e) => {
     e.stopPropagation();
     const item = e.target.closest('.clip-item');
     if (!item) return;
     const id = item.dataset.id;
     if (!id) return;
+
+    if (e.target.closest('[data-action="image-task"]')) {
+      const button=e.target.closest('button');if(button.disabled)return;button.disabled=true;
+      try {
+        const result=await window.SlateTaskAttachments.importClipboardEntry(clipHistory.find(entry=>entry.id===id));
+        if(!result.ok)showStatusToast(result.error||'图片导入失败');
+        else if(window.SlateTasks.add('图片待办',{attachments:[result.attachment],preserveDrafts:true}))showStatusToast('图片已存为今天的待办，可在详情中补充说明');
+        else showStatusToast('待办未保存，请重试');
+      } catch {showStatusToast('图片导入失败，请重试');}finally{if(button.isConnected)button.disabled=false;}
+      return;
+    }
 
     if (e.target.closest('[data-action="capture"]')) {
       const entry = clipHistory.find(entry => entry.id === id);
@@ -4208,33 +4235,48 @@ initTab();
 
 // Homepage planning is a projection of the existing task records.
 window.SlateTasks = Object.freeze({
+  isReady: () => !workspaceHydrating && !workspaceReloadPending,
+  categories: () => PRIORITIES.map(id=>({id,name:todoCategoryNames[id] || TODO_CATEGORY_DEFAULTS[id] || id})),
+  syncReminders: syncTodoReminders,
   getAll: allTodos,
   matchesView: taskMatchesView,
   toggle: toggleTodo,
   add(text,options={}) {
     const parsed = window.SlateDomain.parseQuickTodoDate(text,new Date());
-    return addTodo(PRIORITIES.includes('P3') ? 'P3' : PRIORITIES[0],parsed.text,parsed.deadline,false,{period:options.period || 'day',notes:options.notes,preserveDrafts:options.preserveDrafts});
+    return addTodo('P3',parsed.text,parsed.deadline,false,{period:options.period || 'day',notes:options.notes,attachments:options.attachments,preserveDrafts:options.preserveDrafts});
   },
-  setFocus(id,on) {
-    const found = findTodo(id); if (!found) return;
-    data[found.bucket][found.index] = window.SlateWorkflow.setFocus(found.item,on,new Date(),nextFocusOrder());
-    saveData(data); renderList();
+  updateTask(id,patch,options={}) {
+    if (workspaceHydrating || workspaceReloadPending) return false;
+    const found=findTodo(id);if(!found||!patch||typeof patch!=='object')return false;
+    const previous=found.item,next={...previous};
+    for(const field of ['text','notes','support','status','estimateMinutes','followupAt','deadline','attachments','recurrenceId','occurrenceDate'])if(Object.hasOwn(patch,field))next[field]=patch[field];
+    if(Object.hasOwn(patch,'done'))Object.assign(next,window.SlateWorkflow.completeTodo(next,patch.done===true));
+    if(Object.hasOwn(patch,'planKind')||Object.hasOwn(patch,'planDate'))Object.assign(next,window.SlateWorkflow.setPlan(next,patch.planKind||'day',new Date(),patch.planDate||''));
+    if(typeof next.text!=='string'||!next.text.trim())return false;
+    const normalized=normalizeTodoItems([next])[0];if(!normalized)return false;
+    data[found.bucket][found.index]=normalized;
+    if(!saveData(data)){data[found.bucket][found.index]=previous;showStatusToast('任务未保存，请重试');return false;}
+    renderList(undefined,{preserveDrafts:options.preserveDrafts!==false});return true;
   },
+  addScheduled(task,bucket) {
+    if(workspaceHydrating||workspaceReloadPending)return false;
+    if(findTodo(task?.id))return true;
+    const normalized=normalizeTodoItems([task])[0];if(!normalized)return false;
+    const key=PRIORITIES.includes(bucket)?bucket:'P3';data[key].push(normalized);
+    if(!saveData(data)){data[key].pop();return false;}
+    renderList(undefined,{preserveDrafts:true});return true;
+  },
+  setFocus(id,on) { return setTodoPriority(id,on); },
   moveFocus(id,direction) {
-    const items = window.SlateWorkflow.focusTasks(allTodos());
-    const index = items.findIndex(item=>item.id === id),next = index + direction;
-    if (index < 0 || next < 0 || next >= items.length) return;
-    [items[index],items[next]] = [items[next],items[index]];
-    items.forEach((item,order)=>{const found=findTodo(item.id);if(found) found.item.focusOrder=order;});
-    saveData(data); renderList();
+    const items=window.SlateWorkflow.focusTasks(allTodos()),index=items.findIndex(item=>item.id===id),next=index+direction;
+    if(index<0||next<0||next>=items.length)return false;
+    [items[index],items[next]]=[items[next],items[index]];
+    const orders=new Map(items.map((item,order)=>[item.id,order])),previous=data;
+    data=Object.fromEntries(Object.entries(data).map(([bucket,rows])=>[bucket,rows.map(item=>orders.has(item.id)?{...item,focusOrder:orders.get(item.id)}:item)]));
+    if(!saveData(data)){data=previous;showStatusToast('执行顺序未保存，请重试',true);return false;}
+    renderList(undefined,{preserveDrafts:true});return true;
   },
-  prioritize(id) {
-    const found=findTodo(id);if(!found)return;
-    data[found.bucket][found.index]=window.SlateWorkflow.setFocus(found.item,true);
-    const ordered=[id,...window.SlateWorkflow.focusTasks(allTodos()).filter(item=>item.id!==id).map(item=>item.id)];
-    ordered.forEach((key,order)=>{const task=findTodo(key);if(task)task.item.focusOrder=order;});
-    saveData(data);renderList();
-  },
+  prioritize(id) { return setTodoPriority(id,true); },
   reschedule(id,anchor) {
     const found = findTodo(id);
     if (found) openTodoEditor(found.bucket,found.item,anchor,'plan');

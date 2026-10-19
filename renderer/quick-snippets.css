@@ -1,0 +1,40 @@
+#quick-snippets { position:fixed;margin:0;padding:18px;border:1px solid var(--border-soft-strong);border-radius:14px;background:var(--brand-surface);color:var(--text-1);box-shadow:0 12px 32px #0003;overflow:auto;font:13px/1.6 var(--font); }
+#quick-snippets::backdrop { background:transparent; }
+#quick-snippets header { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+#quick-snippets header strong { font-size:15px; }
+#quick-snippets p { margin:8px 0 12px;color:var(--text-2); }
+#quick-snippets button { font:inherit;cursor:pointer;color:var(--text-1); }
+#quick-snippets-close { border:1px solid var(--border-soft-strong);border-radius:9px;background:var(--hover-bg);padding:5px 10px; }
+#quick-snippets :is(input,button):focus-visible { outline:2px solid var(--brand-focus);outline-offset:2px; }
+#quick-snippets input { width:100%;min-height:36px;padding:7px 10px;border:1px solid var(--border-soft-strong);border-radius:9px;background:var(--hover-bg);color:var(--text-1);font:13px/1.5 var(--font); }
+#quick-snippets input::placeholder { color:var(--text-3); }
+#quick-snippets input::-webkit-search-cancel-button { -webkit-appearance:none;width:14px;height:14px;cursor:pointer;background:var(--text-2);mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6 6 12 12M18 6 6 18' fill='none' stroke='black' stroke-width='2'/%3E%3C/svg%3E") center/contain no-repeat; }
+#quick-snippets .home-commands { padding:0;background:transparent;gap:10px; }
+#quick-snippets .settings-card-heading { margin:12px 0 8px; }
+#quick-snippets .command-list { max-height:230px;overflow:auto; }
+#quick-snippets .command-item { margin-top:8px;min-height:42px; }
+#quick-snippets .command-text { font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere; }
+#quick-snippets header > div { display:flex;gap:8px;align-items:center; }
+#quick-snippets #snippet-new { padding:5px 10px;border:0;border-radius:9px;background:var(--brand-selected);color:var(--brand-selected-text); }
+#quick-snippets .snippets-help { font-size:12px;margin:8px 0 16px; }
+#quick-snippets .snippet-search-wrap { position:relative;margin-bottom:16px; }
+#quick-snippets .snippet-search-wrap svg { position:absolute;left:10px;top:10px;width:16px;height:16px;color:var(--text-3);pointer-events:none; }
+#quick-snippets #quick-snippets-search { padding-left:34px;background:transparent; }
+#quick-snippets .home-commands { display:flex;flex-direction:column; }
+#quick-snippets .settings-card-heading:has(strong:empty):not(:has(.bulk-delete:not([hidden]))) { display:none; }
+#quick-snippets .command-list { max-height:none;gap:12px; }
+#quick-snippets .command-item { display:flex;flex-direction:column;align-items:stretch;margin:0;padding:12px;gap:8px; }
+#quick-snippets .command-text { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;line-clamp:5;white-space:pre-wrap;font:14px/1.65 var(--font);width:100%;padding:0;cursor:pointer;color:var(--text-1); }
+#quick-snippets .snippet-expanded .command-text { -webkit-line-clamp:unset;line-clamp:unset; }
+#quick-snippets .command-actions { display:flex;justify-content:flex-end;gap:6px; }
+#quick-snippets .command-actions .snippet-expand { margin-right:auto;border:0;background:transparent;font-size:12px;color:var(--text-2); }
+#quick-snippets #snippet-composer { display:grid;gap:12px;padding-top:4px; }
+#quick-snippets #snippet-composer[hidden],#quick-snippets [hidden] { display:none!important; }
+#quick-snippets #snippet-composer > label { font-size:14px;font-weight:600; }
+#quick-snippets #command-add { width:100%;min-height:190px;max-height:340px;resize:vertical;border:1px solid var(--border-soft-strong);border-radius:9px;padding:12px;background:var(--brand-surface-inset);color:var(--text-1);font:14px/1.7 var(--font); }
+#quick-snippets #snippet-editor-hint { margin:0;font-size:12px; }
+#quick-snippets .snippet-composer-actions { display:flex;justify-content:flex-end;gap:8px; }
+#quick-snippets .snippet-composer-actions button { padding:7px 12px;border:1px solid var(--border-soft-strong);border-radius:9px;background:var(--hover-bg); }
+#quick-snippets #snippet-editor-save { background:var(--brand-selected);color:var(--brand-selected-text);border-color:transparent; }
+#quick-snippets #snippet-status { margin:10px 0 0;font-size:12px; }
+#quick-snippets #snippet-status:empty { display:none; }

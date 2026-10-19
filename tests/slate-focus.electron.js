@@ -93,6 +93,8 @@ async function main() {
         return {
           contentClipPath: getComputedStyle(panel).clipPath,
           shellClipPath: getComputedStyle(panel, '::before').clipPath,
+          transform: getComputedStyle(panel).transform,
+          transitions: getComputedStyle(panel).transitionProperty,
         };
       })()
     `);
@@ -101,11 +103,13 @@ async function main() {
       'none',
       '折叠动效不得裁剪承载全部组件的内容层'
     );
-    assert.notEqual(
+    assert.equal(
       collapsedPanelLayers.shellClipPath,
       'none',
-      '折叠轮廓应由独立背景外壳承担'
+      '1.5 滑动动效保持完整外壳，不再收缩裁剪'
     );
+    assert.notEqual(collapsedPanelLayers.transform,'none','收起面板应移出顶部视口');
+    assert.ok(collapsedPanelLayers.transitions.includes('transform'),'展开与收起应使用连续滑动');
 
     window.setSize(1240, 616);
     const topbarTools = await window.webContents.executeJavaScript(`
@@ -274,7 +278,7 @@ async function main() {
           const shellClipPath = getComputedStyle(panel, '::before').clipPath;
           resolve({
             contentClipPath: getComputedStyle(panel).clipPath,
-            shellOwnsExpandedOutline: shellClipPath !== 'none' && !shellClipPath.includes('calc'),
+            shellOwnsExpandedOutline: shellClipPath === 'none' && getComputedStyle(panel, '::before').borderBottomLeftRadius === getComputedStyle(panel).borderBottomLeftRadius,
             rightmostDirectTab: document.querySelector('#tabs .tab[data-tab]:last-of-type')?.dataset.tab,
             settingsInMoreMenu: Boolean(document.querySelector('#tab-more-menu .tab[data-tab="settings"]')),
             activePanel: document.getElementById('tab-settings')?.classList.contains('active'),
